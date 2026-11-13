@@ -180,6 +180,13 @@ func TestSignInWithARoleSession(t *testing.T) {
 	bucket := unique("unshared-")
 	_, err = s3Client().CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String(bucket)})
 	requireNoErr(t, err, "create bucket")
+	t.Cleanup(func() {
+		_, err := s3Client().DeleteBucket(context.Background(),
+			&s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+		if err != nil {
+			t.Errorf("delete bucket %s: %v", bucket, err)
+		}
+	})
 	res = b.Get("/s3")
 	consoletest.RequireStatus(t, res, http.StatusOK)
 	if strings.Contains(consoletest.Text(res.Doc), bucket) {
