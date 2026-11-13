@@ -38,10 +38,12 @@ type secret struct {
 
 // fakeSM is a Secrets Manager in memory.
 type fakeSM struct {
-	secrets map[string]*secret
-	listIn  []*secretsmanager.ListSecretsInput
-	reads   int
-	mu      sync.Mutex
+	secrets  map[string]*secret
+	policies consoletest.PolicyStore
+	listIn   []*secretsmanager.ListSecretsInput
+	puts     []*secretsmanager.PutResourcePolicyInput
+	reads    int
+	mu       sync.Mutex
 }
 
 func newFake() *fakeSM { return &fakeSM{secrets: map[string]*secret{}} }

@@ -1,0 +1,59 @@
+{{/* A resource's policy: the stored document in a form to edit, save and
+delete, or why it could not be read, in its place. Called with (dict "P"
+a web.Policy "CSRF" the token). */}}
+{{define "policyfailure"}}{{with .}}<div class="failure" role="alert">
+  {{- with .Code}}<p><strong>The service answered {{.}}.</strong></p>{{end}}
+  <p>{{.Message}}</p>
+</div>{{end}}{{end}}
+
+{{define "policyfields"}}{{template "csrf" .}}{{range .P.Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}{{end}}
+
+{{define "policyform"}}
+{{- $p := .P}}
+{{- if $p.ReadErr}}
+<p class="hint">The policy could not be read.</p>
+{{template "policyfailure" $p.ReadErr}}
+{{- else}}
+{{- if not (or $p.Exists $p.Named)}}<p class="empty">No policy. Write one below to attach it.</p>{{end}}
+<form method="post" action="{{$p.Action}}" class="stack wide">
+  {{template "policyfields" .}}
+  {{- if $p.Named}}{{if $p.Exists}}<input type="hidden" name="name" value="{{$p.Name}}">
+  {{- else}}<input type="hidden" name="new" value="true">
+  <label>Policy name <input name="name" value="{{$p.Name}}" required spellcheck="false" maxlength="64"></label>{{end}}{{end}}
+  <label>Policy document, JSON <textarea id="{{$p.ID}}-document" name="document" rows="14" spellcheck="false" class="mono" required placeholder="{{$p.Placeholder}}"{{if $p.Error}} aria-describedby="{{$p.ID}}-error"{{end}}>{{$p.Document}}</textarea></label>
+  {{- if $p.BlockPublicBox}}
+  <label class="check"><input type="checkbox" name="blockPublic"{{if $p.BlockPublic}} checked{{end}}> Block a policy that grants broad access</label>
+  {{- end}}
+  {{- with $p.Error}}<div class="failure" role="alert" id="{{$p.ID}}-error">
+    {{- with .Code}}<p><strong>The service answered {{.}}.</strong></p>{{end}}
+    <p>{{.Message}}</p>
+  </div>{{end}}
+  {{- with $p.Validation}}<div class="{{if .Passed}}banner banner-ok{{else}}failure{{end}}" role="status" id="{{$p.ID}}-validation">
+    {{- if .Passed}}<p>The policy passed validation.</p>{{else}}<p><strong>The policy did not pass validation.</strong></p>{{end}}
+    {{- range .Findings}}<p>{{with .Check}}<code>{{.}}</code> {{end}}{{.Message}}</p>{{end}}
+  </div>{{end}}
+  <div class="row">
+    <button type="submit" class="primary">{{if $p.Exists}}Save policy{{else if $p.Named}}Create policy{{else}}Attach policy{{end}}</button>
+    {{- with $p.ValidateAction}} <button type="submit" formaction="{{.}}">Validate</button>{{end}}
+  </div>
+</form>
+{{- if $p.Exists}}
+<form method="post" action="{{$p.DeleteAction}}" class="inline" data-confirm="Delete the policy{{with $p.Name}} {{.}}{{end}}?">
+  {{template "policyfields" .}}{{with $p.Name}}<input type="hidden" name="name" value="{{.}}">{{end}}
+  <button type="submit" class="danger">Delete policy</button>
+</form>
+{{- end}}
+{{- if $p.RemoveAction}}{{with $p.Statements}}
+<h3>Statements</h3>
+<table class="grid">
+  <thead><tr><th scope="col">Sid</th><th scope="col">Effect</th><th scope="col">Principal</th><th scope="col">Action</th><th scope="col">Condition</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+  <tbody>
+  {{- range .}}
+  <tr><td>{{if .Sid}}<code>{{.Sid}}</code>{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Effect}}</td><td><code class="break">{{.Principal}}</code></td><td><code class="break">{{.Action}}</code></td><td><code class="break">{{.Condition}}</code></td>
+  <td class="actions">{{if .Sid}}<form method="post" action="{{$p.RemoveAction}}" class="inline" data-confirm="Remove statement {{.Sid}}?">{{template "policyfields" $}}<input type="hidden" name="{{$p.RemoveField}}" value="{{.Sid}}"><button type="submit" class="quiet danger">Remove</button></form>{{end}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{- end}}{{end}}
+{{- end}}
+{{end}}

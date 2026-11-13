@@ -51,4 +51,10 @@
 </form>
 {{template "pager" $d}}
 {{else}}{{template "empty" "Nothing here yet. Upload a file, or give a key with slashes to make folders."}}{{end}}
+{{with $d.Policy}}
+<section aria-labelledby="policy-head">
+<h2 id="policy-head">Policy</h2>
+{{template "policyform" (dict "P" . "CSRF" $.CSRF)}}
+</section>
+{{end}}
 {{end}}

@@ -1,0 +1,15 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/mail">Messages</a></nav><h1>Identities</h1></div></header>
+{{if $d.Identities}}
+<table class="grid">
+  <thead><tr><th scope="col">Identity</th><th scope="col">Type</th><th scope="col">Verification</th><th scope="col">Sending</th></tr></thead>
+  <tbody>
+  {{- range $d.Identities}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a></td><td>{{.Type}}</td><td>{{.Status}}</td><td>{{if .SendingEnabled}}enabled{{else}}<span class="muted">disabled</span>{{end}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{if $d.Truncated}}<p class="hint">The list holds the first identities only.</p>{{end}}
+{{else}}{{template "empty" "No email identities. Create one with CreateEmailIdentity."}}{{end}}
+{{end}}

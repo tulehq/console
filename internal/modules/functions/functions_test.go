@@ -29,7 +29,9 @@ type fakeLambda struct {
 	mappings map[string]*types.EventSourceMappingConfiguration
 	invoked  []*lambda.InvokeInput
 	history  []functions.Invocation
+	policies consoletest.PolicyStore
 	queries  []url.Values
+	revision int
 	mu       sync.Mutex
 }
 

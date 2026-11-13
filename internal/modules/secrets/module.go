@@ -60,6 +60,18 @@ type API interface {
 	RestoreSecret(
 		context.Context, *secretsmanager.RestoreSecretInput, ...func(*secretsmanager.Options),
 	) (*secretsmanager.RestoreSecretOutput, error)
+	GetResourcePolicy(
+		context.Context, *secretsmanager.GetResourcePolicyInput, ...func(*secretsmanager.Options),
+	) (*secretsmanager.GetResourcePolicyOutput, error)
+	PutResourcePolicy(
+		context.Context, *secretsmanager.PutResourcePolicyInput, ...func(*secretsmanager.Options),
+	) (*secretsmanager.PutResourcePolicyOutput, error)
+	DeleteResourcePolicy(
+		context.Context, *secretsmanager.DeleteResourcePolicyInput, ...func(*secretsmanager.Options),
+	) (*secretsmanager.DeleteResourcePolicyOutput, error)
+	ValidateResourcePolicy(
+		context.Context, *secretsmanager.ValidateResourcePolicyInput, ...func(*secretsmanager.Options),
+	) (*secretsmanager.ValidateResourcePolicyOutput, error)
 }
 
 // NewClient returns the client for a session's credentials.
@@ -91,6 +103,9 @@ func (m *Module) Init(context.Context) error {
 		g.Post("/secret/value", m.putValue)
 		g.Post("/secret/delete", m.remove)
 		g.Post("/secret/restore", m.restore)
+		g.Post("/secret/policy", m.putPolicy)
+		g.Post("/secret/policy/delete", m.deletePolicy)
+		g.Post("/secret/policy/validate", m.validatePolicy)
 	})
 	return nil
 }
@@ -197,6 +212,9 @@ type Revealed struct {
 }
 
 type secretView struct {
+	// Policy is the secret's resource policy; a secret scheduled for
+	// deletion has none to show, as secret-store answers it nothing.
+	Policy       *web.Policy
 	Created      time.Time
 	Changed      time.Time
 	Accessed     time.Time
@@ -232,6 +250,7 @@ func (m *Module) describe(c gas.Context, id string) (secretView, error) {
 		v.Tags = append(v.Tags, Tag{Key: aws.ToString(t.Key), Value: aws.ToString(t.Value)})
 	}
 	if v.Deleted.IsZero() {
+		v.Policy = loadPolicy(c, api, v.Name, v.ARN)
 		// A secret scheduled for deletion answers nothing but describe
 		// and restore, so it has no versions to list.
 		in := &secretsmanager.ListSecretVersionIdsInput{

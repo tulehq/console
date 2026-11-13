@@ -9,8 +9,10 @@ the key you sign in with.
 
 Each service it is pointed at gets a section: object-store's buckets,
 secret-store's secrets, accounts' organization, identity's users and keys,
-mailbox's messages, queues' queues and functions' functions. A console beside
-a lone object-store shows only buckets.
+mailbox's messages and identities, queues' queues and functions' functions,
+each bucket, secret, queue, function and email identity with its
+resource-based policy. A console beside a lone object-store shows only
+buckets.
 
 ## Running it
 
@@ -272,9 +274,13 @@ first, with JavaScript on.
 
 ### Permissions
 
-Every service evaluates identity's policies for the keys identity issued;
-the root key is always allowed, and a principal of another account, such as
-a member account's role session, is refused by every service but identity.
+Every service evaluates identity's policies for the keys identity issued,
+with the resource-based policy of what the request acts on where the
+service has one ([Resource policies](#resource-policies)); the root key is
+always allowed. A principal of another account, such as a member account's
+role session, is allowed only what a resource policy shares with it besides
+its own identity policies; accounts lets it call only
+`DescribeOrganization`, as a member of the organization.
 The console asks for nothing beyond what each page needs and shows what the
 service answers: a page the signed-in principal may not read shows that
 service's `AccessDenied` (or `AccessDeniedException`) and its message, with
@@ -293,6 +299,39 @@ invocations (`lambda`). A policy such as `{"Effect": "Allow", "Action":
 ["sqs:*", "tule:Inspect"], "Resource": "*"}` grants a section and its
 inspection pages. A function's page without `tule:Inspect` shows its
 configuration and says why its invocations are missing.
+
+### Resource policies
+
+A bucket's, secret's, queue's and function's page has a Policy section, and
+an email identity's page its sending authorization policies. The section
+shows the stored policy as JSON, indented, in a textarea to edit and save
+with the service's own operation, and a delete; a resource without one has
+an empty form with an example naming the resource. Saving sends the
+document as it was typed. A document the service refuses (object-store's
+`MalformedPolicy`, secret-store's `MalformedPolicyDocumentException` or
+`PublicPolicyException`, queues' `InvalidAttributeValue`, functions'
+`InvalidParameterValueException`, mailbox's `BadRequestException`, or any
+other error) is shown next to the form with the service's code and message,
+and the page keeps the document as it was sent, so nothing is lost.
+
+A policy the signed-in principal may not read, such as without
+`s3:GetBucketPolicy`, shows the service's `AccessDenied` (or
+`AccessDeniedException`) in the section's place, and the rest of the page is
+shown; a save or delete it may not make is shown next to the form the same
+way, with the service's status.
+
+| Page | Read | Save | Delete | Also |
+|---|---|---|---|---|
+| Bucket, at its root | `GetBucketPolicy` | `PutBucketPolicy` | `DeleteBucketPolicy` | |
+| Secret | `GetResourcePolicy` | `PutResourcePolicy` | `DeleteResourcePolicy` | "Validate", `ValidateResourcePolicy`: its findings, nothing stored; the `BlockPublicPolicy` box, checked to begin with |
+| Queue | `GetQueueAttributes` `Policy` | `SetQueueAttributes` `Policy` | `SetQueueAttributes` with an empty `Policy` | Each statement listed, one with a `Sid` removed with `RemovePermission` by that label |
+| Function | `GetPolicy` | `PutResourcePolicy` | `DeleteResourcePolicy` | Each statement listed, one removed with `RemovePermission` by its `StatementId`; every change sends the `RevisionId` the page was read with, so a policy changed since is refused with `PreconditionFailedException` rather than overwritten |
+| Email identity | `GetEmailIdentityPolicies` | `CreateEmailIdentityPolicy` for a new name, `UpdateEmailIdentityPolicy` for one it has | `DeleteEmailIdentityPolicy` | Every named policy in a form of its own, and a form to add one by name |
+
+Statements are added through the document; the console has no form for
+`AddPermission`, though it lists and removes the statements it writes. A
+secret scheduled for deletion has no Policy section, as secret-store
+answers it nothing until it is restored.
 
 ### Object store
 
@@ -366,6 +405,10 @@ signed-in principal: a user without IAM permissions sees identity's
 `AccessDenied`.
 
 ### Mailbox
+
+`/mail/identities`: the email identities, with their type, verification and
+whether sending is enabled. An identity's page has its details and its
+sending authorization policies ([Resource policies](#resource-policies)).
 
 `/mail`: the messages, newest first, with every filter mailbox's retrieval
 API has (from, to, subject, full-text search, since and until, read in
@@ -448,7 +491,8 @@ shows its service's own readiness.
   checkout and a Docker daemon when both are there, and are skipped
   otherwise.
 - Out of scope: policy versions beyond the default's document, editing a
-  role's trust policy after it is created, groups, permissions boundaries
+  role's trust policy after it is created, creating and deleting email
+  identities, a form for `AddPermission`, groups, permissions boundaries
   and the rest of IAM beyond users, roles, keys and policies, the rarely
   used operations of each API, and views across accounts beyond what the
   signed-in principal's calls return.
@@ -482,7 +526,13 @@ functions is denied their inspection pages until it is allowed
 identity, refuses a wrong secret and signs in a key with no policies; the
 root key sees every page; and a managed policy and a
 role created through the console, the one attached to the other, give the
-role's sessions what the policy allows. They also check that the console's log, captured at trace level,
+role's sessions what the policy allows. Each Policy section sets, reads and
+deletes a policy of a bucket, a secret, a queue, a function and an email
+identity, checked with the SDK, is shown the service's error for a
+malformed document next to its form, and lists and removes a statement
+`AddPermission` wrote; and a user allowed each resource's page but no
+policy action sees the page with the service's `AccessDenied` in its
+Policy section, for reading the policy and for saving one. They also check that the console's log, captured at trace level,
 holds none of the secrets they handled. Each checkout is the console's
 sibling, `../<service>`, by default, or the directory
 `TULE_E2E_<SERVICE>_DIR` names (`TULE_E2E_OBJECT_STORE_DIR` and so on); CI

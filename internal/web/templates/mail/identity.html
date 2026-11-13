@@ -1,0 +1,27 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/mail">Messages</a> <span aria-hidden="true">/</span> <a href="/mail/identities">Identities</a></nav><h1 class="break">{{$d.Name}}</h1></div></header>
+<dl class="facts">
+  <dt>Type</dt><dd>{{$d.Type}}</dd>
+  <dt>Verification</dt><dd>{{$d.Status}}{{if $d.VerifiedForSending}}, verified for sending{{end}}</dd>
+  {{with $d.ConfigurationSet}}<dt>Configuration set</dt><dd>{{.}}</dd>{{end}}
+</dl>
+
+<section aria-labelledby="policies-head">
+<h2 id="policies-head">Sending authorization policies</h2>
+{{- if $d.PoliciesErr}}
+<p class="hint">The policies could not be read.</p>
+{{template "policyfailure" $d.PoliciesErr}}
+{{- else if not $d.Policies}}{{template "empty" "No policies."}}{{end}}
+{{- range $d.Policies}}
+<h3><code>{{.Name}}</code></h3>
+{{template "policyform" (dict "P" . "CSRF" $.CSRF)}}
+{{- end}}
+<details class="panel"{{if $d.New.Error}} open{{end}}>
+  <summary>Add a policy</summary>
+  {{template "policyform" (dict "P" $d.New "CSRF" .CSRF)}}
+</details>
+</section>
+
+{{with $d.Tags}}<h2>Tags</h2><table class="grid kv"><tbody>{{range .}}<tr><th scope="row">{{.Key}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table>{{end}}
+{{end}}

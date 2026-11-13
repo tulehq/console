@@ -76,6 +76,21 @@ type API interface {
 		*s3.DeleteObjectsInput,
 		...func(*s3.Options),
 	) (*s3.DeleteObjectsOutput, error)
+	GetBucketPolicy(
+		context.Context,
+		*s3.GetBucketPolicyInput,
+		...func(*s3.Options),
+	) (*s3.GetBucketPolicyOutput, error)
+	PutBucketPolicy(
+		context.Context,
+		*s3.PutBucketPolicyInput,
+		...func(*s3.Options),
+	) (*s3.PutBucketPolicyOutput, error)
+	DeleteBucketPolicy(
+		context.Context,
+		*s3.DeleteBucketPolicyInput,
+		...func(*s3.Options),
+	) (*s3.DeleteBucketPolicyOutput, error)
 	Uploader
 }
 
@@ -109,6 +124,8 @@ func (m *Module) Init(context.Context) error {
 		g.Get("/object/download", m.download)
 		g.Post("/upload", m.upload)
 		g.Post("/objects/delete", m.deleteObjects)
+		g.Post("/bucket/policy", m.putPolicy)
+		g.Post("/bucket/policy/delete", m.deletePolicy)
 	})
 	return nil
 }
@@ -197,6 +214,8 @@ type Object struct {
 }
 
 type browseView struct {
+	// Policy is the bucket's policy, shown at the bucket's root only.
+	Policy    *web.Policy
 	Bucket    string
 	Prefix    string
 	NextLink  string
@@ -207,7 +226,20 @@ type browseView struct {
 }
 
 func (m *Module) browse(c gas.Context) error {
-	bucket, prefix, token := c.Query("bucket"), c.Query("prefix"), c.Query("token")
+	bucket := c.Query("bucket")
+	v, err := m.load(c, bucket, c.Query("prefix"), c.Query("token"))
+	if err != nil {
+		return m.render.Fail(c, Key, bucket, err)
+	}
+	return m.render.Render(
+		c,
+		web.Page{Name: "objects/bucket", Title: bucket, Section: Key, Data: v},
+	)
+}
+
+// load reads a page of the bucket under prefix, and at the bucket's root
+// its policy.
+func (m *Module) load(c gas.Context, bucket, prefix, token string) (browseView, error) {
 	in := &s3.ListObjectsV2Input{
 		Bucket:    aws.String(bucket),
 		Prefix:    aws.String(prefix),
@@ -217,11 +249,11 @@ func (m *Module) browse(c gas.Context) error {
 	if token != "" {
 		in.ContinuationToken = aws.String(token)
 	}
-	out, err := m.client(c).ListObjectsV2(c, in)
+	api := m.client(c)
+	out, err := api.ListObjectsV2(c, in)
 	if err != nil {
-		return m.render.Fail(c, Key, bucket, err)
+		return browseView{}, err
 	}
-
 	v := browseView{Bucket: bucket, Prefix: prefix, Crumbs: crumbs(bucket, prefix)}
 	for _, p := range out.CommonPrefixes {
 		full := aws.ToString(p.Prefix)
@@ -249,10 +281,10 @@ func (m *Module) browse(c gas.Context) error {
 	if token != "" {
 		v.FirstLink = web.Link(Path+"/bucket", "bucket", bucket, "prefix", prefix)
 	}
-	return m.render.Render(
-		c,
-		web.Page{Name: "objects/bucket", Title: bucket, Section: Key, Data: v},
-	)
+	if prefix == "" && token == "" {
+		v.Policy = loadPolicy(c, api, bucket)
+	}
+	return v, nil
 }
 
 // crumbs returns the steps from the bucket's root to prefix, each a link

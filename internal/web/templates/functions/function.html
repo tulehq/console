@@ -24,6 +24,13 @@
 {{if $d.HistoryErr}}<p class="banner banner-warn">The invocation history could not be read: {{$d.HistoryErr}}</p>
 {{else}}{{template "invtable" $d.Invocations}}<p><a href="{{$d.HistoryLink}}">All invocations of {{$d.Name}}</a></p>{{end}}
 
+{{with $d.Policy}}
+<section aria-labelledby="policy-head">
+<h2 id="policy-head">Policy</h2>
+{{template "policyform" (dict "P" . "CSRF" $.CSRF)}}
+</section>
+{{end}}
+
 <h2>Event source mappings</h2>
 {{template "maptable" (dict "Mappings" $d.Mappings "CSRF" .CSRF "Function" $d.Name)}}
 

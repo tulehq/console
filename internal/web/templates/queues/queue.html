@@ -61,6 +61,13 @@
 {{template "pager" $d}}
 {{else}}{{template "empty" "No messages in this state."}}{{end}}
 
+{{with $d.Policy}}
+<section aria-labelledby="policy-head">
+<h2 id="policy-head">Policy</h2>
+{{template "policyform" (dict "P" . "CSRF" $.CSRF)}}
+</section>
+{{end}}
+
 <h2>Attributes</h2>
 <table class="grid kv"><tbody>{{range $d.Attributes}}<tr><th scope="row">{{.Name}}</th><td class="break"><code>{{.Value}}</code></td></tr>{{end}}</tbody></table>
 {{end}}

@@ -3,6 +3,7 @@
 <header class="page-head">
   <h1>Messages</h1>
   <div class="actions">
+    <a class="button" href="/mail/identities">Identities</a>
     <a class="button" href="/mail/failures">Rendering failures</a>
     <form method="post" action="/mail/reset" class="inline" data-confirm="Delete every message and rendering failure?">{{template "csrf" .}}<button type="submit" class="danger">Delete all</button></form>
   </div>
