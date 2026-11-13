@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/gasmod/gas/config"
 
@@ -172,10 +173,19 @@ func TestSignInWithARoleSession(t *testing.T) {
 		t.Fatal("a page carries the session token")
 	}
 	// The session is an admin principal of its own account in identity,
-	// and a principal of another account to object-store, which refuses it
-	// whatever its policies.
+	// and a principal of another account to object-store, which lists it
+	// its own account's buckets, none, and refuses it a bucket of the
+	// services' account that no bucket policy shares with it.
 	consoletest.RequireStatus(t, b.Get("/iam"), http.StatusOK)
+	bucket := unique("unshared-")
+	_, err = s3Client().CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String(bucket)})
+	requireNoErr(t, err, "create bucket")
 	res = b.Get("/s3")
+	consoletest.RequireStatus(t, res, http.StatusOK)
+	if strings.Contains(consoletest.Text(res.Doc), bucket) {
+		t.Fatal("another account's session lists the services' account's buckets")
+	}
+	res = b.Get("/s3/bucket?bucket=" + bucket)
 	consoletest.RequireStatus(t, res, http.StatusForbidden)
 	consoletest.RequireText(t, res, "AccessDenied", "no resource-based policy allows")
 
