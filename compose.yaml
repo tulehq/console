@@ -1,0 +1,113 @@
+# Every Tule service and the console, wired together: each service accepts
+# the one root key and the keys identity issues, and the console shows them
+# all at http://localhost:9070. Sign in with the root key below, or with a
+# key identity issued.
+#
+#   docker compose up -d
+#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose --profile functions up -d
+#
+# functions runs function containers through the Docker daemon, so it needs
+# the daemon's socket and its group (on macOS, stat -f %g). It is behind the
+# functions profile; without it, the console's Functions section shows the
+# service as unreachable.
+
+x-root-key: &root-key
+  # The AWS documentation's example key; identity holds access key IDs to at
+  # least 16 characters. Use your own outside a local machine.
+  TULE_Auth_AccessKeyID: AKIAIOSFODNN7EXAMPLE
+  TULE_Auth_SecretAccessKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+x-identity: &identity-endpoint
+  TULE_Auth_IdentityEndpoint: http://identity:9030
+
+services:
+  identity:
+    image: ghcr.io/tulehq/identity:0.1.0
+    environment:
+      <<: *root-key
+      TULE_Identity_AccountsEndpoint: http://accounts:9020
+    ports: ["9030:9030"]
+    volumes: [identitydata:/data]
+
+  accounts:
+    image: ghcr.io/tulehq/accounts:0.2.0
+    environment:
+      <<: [*root-key, *identity-endpoint]
+    ports: ["9020:9020"]
+    volumes: [accountsdata:/data]
+
+  object-store:
+    image: ghcr.io/tulehq/object-store:0.5.0
+    environment:
+      <<: [*root-key, *identity-endpoint]
+    ports: ["9000:9000"]
+    volumes: [objectdata:/data]
+
+  secret-store:
+    image: ghcr.io/tulehq/secret-store:0.2.0
+    environment:
+      <<: [*root-key, *identity-endpoint]
+    ports: ["9010:9010"]
+    volumes: [secretdata:/data]
+
+  mailbox:
+    image: ghcr.io/tulehq/mailbox:0.1.0
+    environment:
+      <<: [*root-key, *identity-endpoint]
+    ports: ["9040:9040"]
+    volumes: [maildata:/data]
+
+  queues:
+    image: ghcr.io/tulehq/queues:0.1.0
+    environment:
+      <<: [*root-key, *identity-endpoint]
+      # Queue URLs name the host clients on this machine reach queues at.
+      TULE_Queues_BaseURL: http://localhost:9050
+    ports: ["9050:9050"]
+    volumes: [queuesdata:/data]
+
+  functions:
+    image: ghcr.io/tulehq/functions:0.1.0
+    profiles: [functions]
+    depends_on:
+      queues: {condition: service_healthy}
+    environment:
+      <<: [*root-key, *identity-endpoint]
+      TULE_Functions_QueuesEndpoint: http://queues:9050
+    # The function containers reach the Runtime API as
+    # host.docker.internal:9061, so it is published on the same port.
+    ports: ["9060:9060", "9061:9061"]
+    volumes:
+      - functionsdata:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The group that owns the socket on the Docker host, from DOCKER_GID as
+    # above. Unset, it is 0, the root group.
+    group_add: ["${DOCKER_GID:-0}"]
+
+  console:
+    image: ghcr.io/tulehq/console:0.1.0
+    depends_on:
+      identity: {condition: service_healthy}
+      accounts: {condition: service_healthy}
+      object-store: {condition: service_healthy}
+      secret-store: {condition: service_healthy}
+      mailbox: {condition: service_healthy}
+      queues: {condition: service_healthy}
+    environment:
+      TULE_Console_IdentityEndpoint: http://identity:9030
+      TULE_Console_AccountsEndpoint: http://accounts:9020
+      TULE_Console_ObjectStoreEndpoint: http://object-store:9000
+      TULE_Console_SecretStoreEndpoint: http://secret-store:9010
+      TULE_Console_MailboxEndpoint: http://mailbox:9040
+      TULE_Console_QueuesEndpoint: http://queues:9050
+      TULE_Console_FunctionsEndpoint: http://functions:9060
+    ports: ["9070:9070"]
+
+volumes:
+  identitydata:
+  accountsdata:
+  objectdata:
+  secretdata:
+  maildata:
+  queuesdata:
+  functionsdata:
