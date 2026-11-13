@@ -304,29 +304,42 @@ configuration and says why its invocations are missing.
 
 A bucket's, secret's, queue's and function's page has a Policy section, and
 an email identity's page its sending authorization policies. The section
-shows the stored policy as JSON, indented, in a textarea to edit and save
-with the service's own operation, and a delete; a resource without one has
-an empty form with an example naming the resource. Saving sends the
-document as it was typed. A document the service refuses (object-store's
-`MalformedPolicy`, secret-store's `MalformedPolicyDocumentException` or
-`PublicPolicyException`, queues' `InvalidAttributeValue`, functions'
-`InvalidParameterValueException`, mailbox's `BadRequestException`, or any
-other error) is shown next to the form with the service's code and message,
-and the page keeps the document as it was sent, so nothing is lost.
+shows the policy as the service's own read returns it, as JSON, indented, in
+a textarea to edit and save with the service's own operation, and a delete;
+a resource without one has an empty form with an example naming the
+resource. Saving sends the document as it was typed. A document the service
+refuses (object-store's `MalformedPolicy`, secret-store's
+`MalformedPolicyDocumentException` or `PublicPolicyException`, queues'
+`InvalidAttributeValue`, functions' `InvalidParameterValueException`,
+mailbox's `BadRequestException`, or any other error) is shown next to the
+form with the service's code and message, and the page keeps the document as
+it was sent, so nothing is lost.
+
+With an identity endpoint, each service binds the IAM user and role ARNs in
+a policy's `Principal` and `NotPrincipal` to the principals' unique IDs when
+it stores the policy, as AWS does, and its read shows each one as the
+principal's current ARN while that user or role exists, and as its unique
+ID (`AIDA...` for a user, `AROA...` for a role) once it is deleted, even
+when a user or role of the same name exists again. The section shows the
+document so, and saving it again keeps the ID, which still names the
+deleted principal and no other. A save naming a user or role ARN that no
+principal has is refused, its code above and the service's message shown
+next to the form. Account IDs, root ARNs, `*`, role session ARNs, service
+principals and ARNs in conditions are kept as written.
 
 A save or delete never loses a change made since the page was read. Each
 form sends back the version of the policy the page read (a SHA-256 of the
-document as stored, empty for none), and the console reads the policy again
-before it writes: one that changed, whether another client replaced it,
-added a statement with `AddPermission` or deleted it, refuses the change
-with `409`, "The policy changed since the page was loaded", next to the
-form, which keeps the document as sent and shows the stored one below it.
-Saving again from that answer replaces the policy as it is now. A
-function's policy is guarded by its `RevisionId` instead, and by this check
-when the page read none. The check and the write are two calls, so a
-change in between is not caught; creating a named sending authorization
-policy is not checked, as mailbox refuses a name the identity has.
-Removing one statement by its `Sid` loses nothing else and is not checked.
+document as the service's read returns it, empty for none), and the console
+reads the policy again before it writes: one that changed, whether another
+client replaced it, added a statement with `AddPermission` or deleted it,
+refuses the change with `409`, "The policy changed since the page was
+loaded", next to the form, which keeps the document as sent and shows the
+stored one below it. Saving again from that answer replaces the policy as it
+is now. A function's policy is guarded by its `RevisionId` instead, and by
+this check when the page read none. The check and the write are two calls,
+so a change in between is not caught; creating a named sending authorization
+policy is not checked, as mailbox refuses a name the identity has. Removing
+one statement by its `Sid` loses nothing else and is not checked.
 
 A policy the signed-in principal may not read, such as without
 `s3:GetBucketPolicy`, shows the service's `AccessDenied` (or
@@ -544,20 +557,22 @@ is denied everything else; one allowed the AWS APIs of mailbox, queues and
 functions is denied their inspection pages until it is allowed
 `tule:Inspect`; a second console pointed at object-store alone, without
 identity, refuses a wrong secret and signs in a key with no policies; the
-root key sees every page; and a managed policy and a
-role created through the console, the one attached to the other, give the
-role's sessions what the policy allows. Each Policy section sets, reads and
-deletes a policy of a bucket, a secret, a queue, a function and an email
-identity, checked with the SDK, is shown the service's error for a
-malformed document next to its form, and lists and removes a statement
-`AddPermission` wrote; and a user allowed each resource's page but no
-policy action sees the page with the service's `AccessDenied` in its
-Policy section, for reading the policy and for saving one, and one allowed
-to read the policies but not change them is refused each save; and a save
-from a page read before the SDK changed the policy is refused, the change
-kept. They also check that the console's log, captured at trace level,
-holds none of the secrets they handled. Each checkout is the console's
-sibling, `../<service>`, by default, or the directory
+root key sees every page; and a managed policy and a role created through
+the console, the one attached to the other, give the role's sessions what
+the policy allows. Each Policy section sets, reads and deletes a policy of a
+bucket, a secret, a queue, a function and an email identity, checked with
+the SDK, is shown the service's error for a malformed document next to its
+form, and lists and removes a statement `AddPermission` wrote; and a user
+allowed each resource's page but no policy action sees the page with the
+service's `AccessDenied` in its Policy section, for reading the policy and
+for saving one, and one allowed to read the policies but not change them is
+refused each save; and a save from a page read before the SDK changed the
+policy is refused, the change kept; and a policy of each resource naming a
+user that is then deleted shows that IAM user's unique ID, is saved again
+from the page with it, and a save naming the deleted user's ARN is refused
+next to the form. They also check that the console's log, captured at trace
+level, holds none of the secrets they handled. Each checkout is the
+console's sibling, `../<service>`, by default, or the directory
 `TULE_E2E_<SERVICE>_DIR` names (`TULE_E2E_OBJECT_STORE_DIR` and so on); CI
 checks out each at its latest release and sets them. Without a checkout the
 tests fail rather than being skipped. functions is the exception, as under
