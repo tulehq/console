@@ -314,21 +314,41 @@ document as it was typed. A document the service refuses (object-store's
 other error) is shown next to the form with the service's code and message,
 and the page keeps the document as it was sent, so nothing is lost.
 
+A save or delete never loses a change made since the page was read. Each
+form sends back the version of the policy the page read (a SHA-256 of the
+document as stored, empty for none), and the console reads the policy again
+before it writes: one that changed, whether another client replaced it,
+added a statement with `AddPermission` or deleted it, refuses the change
+with `409`, "The policy changed since the page was loaded", next to the
+form, which keeps the document as sent and shows the stored one below it.
+Saving again from that answer replaces the policy as it is now. A
+function's policy is guarded by its `RevisionId` instead, and by this check
+when the page read none. The check and the write are two calls, so a
+change in between is not caught; creating a named sending authorization
+policy is not checked, as mailbox refuses a name the identity has.
+Removing one statement by its `Sid` loses nothing else and is not checked.
+
 A policy the signed-in principal may not read, such as without
 `s3:GetBucketPolicy`, shows the service's `AccessDenied` (or
 `AccessDeniedException`) in the section's place, and the rest of the page is
 shown; a save or delete it may not make is shown next to the form the same
-way, with the service's status.
+way, with the service's status. Since a save reads the policy first, a
+principal that may change a policy but not read it is refused that read.
+When a refused save's page cannot read the policy again, the section says
+whether one is stored is unknown, rather than showing none; when the page
+itself cannot be shown again, the refusal and the page's failure are both
+shown.
 
 | Page | Read | Save | Delete | Also |
 |---|---|---|---|---|
 | Bucket, at its root | `GetBucketPolicy` | `PutBucketPolicy` | `DeleteBucketPolicy` | |
 | Secret | `GetResourcePolicy` | `PutResourcePolicy` | `DeleteResourcePolicy` | "Validate", `ValidateResourcePolicy`: its findings, nothing stored; the `BlockPublicPolicy` box, checked to begin with |
 | Queue | `GetQueueAttributes` `Policy` | `SetQueueAttributes` `Policy` | `SetQueueAttributes` with an empty `Policy` | Each statement listed, one with a `Sid` removed with `RemovePermission` by that label |
-| Function | `GetPolicy` | `PutResourcePolicy` | `DeleteResourcePolicy` | Each statement listed, one removed with `RemovePermission` by its `StatementId`; every change sends the `RevisionId` the page was read with, so a policy changed since is refused with `PreconditionFailedException` rather than overwritten |
+| Function | `GetPolicy` | `PutResourcePolicy` | `DeleteResourcePolicy` | Each statement listed, one removed with `RemovePermission` by its `StatementId`; every change sends the `RevisionId` the page was read with, so a policy changed since is refused with `PreconditionFailedException` rather than overwritten. The `ResourceArn` is the function's, from `GetFunction`, never the form's |
 | Email identity | `GetEmailIdentityPolicies` | `CreateEmailIdentityPolicy` for a new name, `UpdateEmailIdentityPolicy` for one it has | `DeleteEmailIdentityPolicy` | Every named policy in a form of its own, and a form to add one by name |
 
-Statements are added through the document; the console has no form for
+Each statement is listed with its `Sid`, effect, principal, action,
+resource and condition. Statements are added through the document; the console has no form for
 `AddPermission`, though it lists and removes the statements it writes. A
 secret scheduled for deletion has no Policy section, as secret-store
 answers it nothing until it is restored.
@@ -532,7 +552,10 @@ identity, checked with the SDK, is shown the service's error for a
 malformed document next to its form, and lists and removes a statement
 `AddPermission` wrote; and a user allowed each resource's page but no
 policy action sees the page with the service's `AccessDenied` in its
-Policy section, for reading the policy and for saving one. They also check that the console's log, captured at trace level,
+Policy section, for reading the policy and for saving one, and one allowed
+to read the policies but not change them is refused each save; and a save
+from a page read before the SDK changed the policy is refused, the change
+kept. They also check that the console's log, captured at trace level,
 holds none of the secrets they handled. Each checkout is the console's
 sibling, `../<service>`, by default, or the directory
 `TULE_E2E_<SERVICE>_DIR` names (`TULE_E2E_OBJECT_STORE_DIR` and so on); CI

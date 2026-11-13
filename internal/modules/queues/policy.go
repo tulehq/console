@@ -44,23 +44,33 @@ func loadPolicy(ctx context.Context, api SQS, name, arn string) *web.Policy {
 		Placeholder:  strings.ReplaceAll(policyExample, "QUEUE", arn),
 	}
 	out, err := api.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{QueueName: aws.String(name)})
-	var attrs *sqs.GetQueueAttributesOutput
+	var doc string
 	if err == nil {
-		attrs, err = api.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
-			QueueUrl:       out.QueueUrl,
-			AttributeNames: []types.QueueAttributeName{types.QueueAttributeNamePolicy},
-		})
+		doc, err = readPolicy(ctx, api, out.QueueUrl)
 	}
 	if err != nil {
 		p.ReadErr = web.ReadFailure(err)
 		return p
 	}
-	if doc := attrs.Attributes[policyAttribute]; doc != "" {
+	if doc != "" {
 		p.Exists = true
 		p.Document = web.FormatJSON(doc)
 		p.Statements = web.Statements(doc)
 	}
+	p.Fields = append(p.Fields, web.Field{Name: web.LoadedField, Value: web.PolicyVersion(doc)})
 	return p
+}
+
+// readPolicy returns the queue's Policy attribute as stored, "" for none.
+func readPolicy(ctx context.Context, api SQS, u *string) (string, error) {
+	attrs, err := api.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       u,
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNamePolicy},
+	})
+	if err != nil {
+		return "", err
+	}
+	return attrs.Attributes[policyAttribute], nil
 }
 
 // putPolicy sets the queue's Policy attribute to the posted document. A
@@ -79,7 +89,9 @@ func (m *Module) putPolicy(c gas.Context) error {
 }
 
 // deletePolicy removes the queue's policy, which SetQueueAttributes does
-// for an empty Policy.
+// for an empty Policy. Removing one statement by its label loses nothing
+// added since, so only saving and deleting the whole policy check that it
+// is the one the page was read with.
 func (m *Module) deletePolicy(c gas.Context) error {
 	name := c.Request().PostForm.Get("name")
 	if err := m.setPolicy(c, name, ""); err != nil {
@@ -92,6 +104,13 @@ func (m *Module) setPolicy(c gas.Context, name, doc string) error {
 	api := m.clients(c).SQS
 	u, err := queueURL(c, api, name)
 	if err != nil {
+		return err
+	}
+	stored, err := readPolicy(c, api, u)
+	if err != nil {
+		return err
+	}
+	if err = web.Unchanged(c.Request().PostForm.Get(web.LoadedField), stored); err != nil {
 		return err
 	}
 	_, err = api.SetQueueAttributes(c, &sqs.SetQueueAttributesInput{
@@ -128,7 +147,7 @@ func (m *Module) removePermission(c gas.Context) error {
 func (m *Module) refused(c gas.Context, name, doc string, err error) error {
 	v, lerr := m.load(c, name, "", "", "")
 	if lerr != nil {
-		return m.render.Fail(c, Key, name, lerr)
+		return m.render.FailRefused(c, Key, name, err, lerr)
 	}
 	if doc == "" {
 		doc = v.Policy.Document

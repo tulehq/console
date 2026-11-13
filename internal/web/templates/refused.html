@@ -1,0 +1,7 @@
+{{define "content"}}
+<header class="page-head"><h1>{{.Title}}</h1></header>
+<p>The policy was not changed:</p>
+{{template "policyfailure" .Data.Refusal}}
+<p>The page could not be shown again:</p>
+{{template "policyfailure" .Data.Load}}
+{{end}}

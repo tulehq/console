@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 
 	"tule.dev/console/internal/consoletest"
+	"tule.dev/console/internal/web"
 )
 
 // fakeSES is the SES v2 API of identities in memory, each with its
@@ -165,7 +166,7 @@ func TestIdentityPolicies(t *testing.T) {
 		"Add a policy",
 	)
 	ph, _ := consoletest.Attr(
-		consoletest.Find(res.Doc, consoletest.ByID("policy-new-document")),
+		consoletest.Find(res.Doc, consoletest.ByID("policy-add-document")),
 		"placeholder",
 	)
 	if !strings.Contains(ph, `"arn:aws:ses:us-east-1:000000000000:identity/example.com"`) {
@@ -190,7 +191,7 @@ func TestIdentityPolicies(t *testing.T) {
 	})
 	consoletest.RequireStatus(t, res, http.StatusBadRequest)
 	consoletest.RequireText(t, res, "The service answered BadRequestException.")
-	if consoletest.Find(res.Doc, consoletest.ByID("policy-new-error")) == nil {
+	if consoletest.Find(res.Doc, consoletest.ByID("policy-add-error")) == nil {
 		t.Fatal("the refusal is not next to the new policy's form")
 	}
 	if !holdsName(res, "third") {
@@ -219,14 +220,16 @@ func editAndDelete(t *testing.T, b *consoletest.Browser, ses *fakeSES) {
 	}
 	res = b.PostForm("/mail/identity/policy", url.Values{
 		"identity": {"example.com"}, "name": {"partner"}, "document": {bad},
+		"loaded": {web.PolicyVersion(sendPolicy)},
 	})
 	consoletest.RequireStatus(t, res, http.StatusBadRequest)
-	if consoletest.Find(res.Doc, consoletest.ByID("policy-partner-error")) == nil {
+	if consoletest.Find(res.Doc, consoletest.ByID("policy-named-partner-error")) == nil {
 		t.Fatal("the refusal is not next to the edited policy's form")
 	}
 	edited := strings.Replace(sendPolicy, "ses:SendEmail", "ses:SendRawEmail", 1)
 	res = b.PostForm("/mail/identity/policy", url.Values{
 		"identity": {"example.com"}, "name": {"partner"}, "document": {edited},
+		"loaded": {web.PolicyVersion(sendPolicy)},
 	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Saved policy partner of example.com.")
 	if ses.identities["example.com"]["partner"] != edited ||
@@ -235,7 +238,7 @@ func editAndDelete(t *testing.T, b *consoletest.Browser, ses *fakeSES) {
 	}
 
 	res = b.PostForm("/mail/identity/policy/delete", url.Values{
-		"identity": {"example.com"}, "name": {"other"},
+		"identity": {"example.com"}, "name": {"other"}, "loaded": {web.PolicyVersion(sendPolicy)},
 	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted policy other of example.com.")
 	if _, ok := ses.identities["example.com"]["other"]; ok {
@@ -263,4 +266,58 @@ func holdsName(res *consoletest.Response, name string) bool {
 		}
 	}
 	return false
+}
+
+func TestIdentityPolicyChangedSincePageLoaded(t *testing.T) {
+	ses := &fakeSES{identities: map[string]map[string]string{
+		"example.com": {"partner": sendPolicy, "new": sendPolicy},
+	}}
+	b := startWith(t, &fakeMailbox{}, ses)
+	page := b.Get("/mail/identity?name=example.com")
+	// A policy named "new" has its own IDs, apart from the add form's.
+	for _, id := range []string{
+		"policy-named-new-document", "policy-named-partner-document",
+		"policy-add-document",
+	} {
+		if n := len(consoletest.FindAll(page.Doc, consoletest.ByID(id))); n != 1 {
+			t.Fatalf("%d elements of id %s, want 1", n, id)
+		}
+	}
+
+	edited := strings.Replace(sendPolicy, "ses:SendEmail", "ses:SendRawEmail", 1)
+	ses.mu.Lock()
+	ses.identities["example.com"]["partner"] = edited
+	ses.mu.Unlock()
+	mine := strings.Replace(sendPolicy, "111122223333", "444455556666", 1)
+	res := b.PostForm("/mail/identity/policy", consoletest.Hidden(page,
+		consoletest.FormHolding("policy-named-partner-document"), "document", mine))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	if consoletest.Find(res.Doc, consoletest.ByID("policy-named-partner-error")) == nil {
+		t.Fatal("the refusal is not next to the policy's form")
+	}
+	consoletest.RequireText(
+		t,
+		res,
+		"The policy changed since the page was loaded",
+		"ses:SendRawEmail",
+	)
+	if ses.identities["example.com"]["partner"] != edited {
+		t.Fatal("the change made since was overwritten")
+	}
+
+	// A policy deleted since is not silently "updated": the refusal's form
+	// creates it again.
+	ses.mu.Lock()
+	delete(ses.identities["example.com"], "new")
+	ses.mu.Unlock()
+	res = b.PostForm("/mail/identity/policy", consoletest.Hidden(page,
+		consoletest.FormHolding("policy-named-new-document"), "document", mine))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	again := consoletest.Hidden(res, consoletest.FormHolding("policy-named-new-document"),
+		"document", mine, "name", "new")
+	if again.Get("new") != "true" {
+		t.Fatalf("the form of the deleted policy does not create it: %v", again)
+	}
+	consoletest.RequireFlash(t, b.Get(b.PostForm("/mail/identity/policy", again).Location()),
+		"ok", "Created policy new")
 }

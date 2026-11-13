@@ -14,7 +14,8 @@ a web.Policy "CSRF" the token). */}}
 <p class="hint">The policy could not be read.</p>
 {{template "policyfailure" $p.ReadErr}}
 {{- else}}
-{{- if not (or $p.Exists $p.Named)}}<p class="empty">No policy. Write one below to attach it.</p>{{end}}
+{{- if $p.Unknown}}<p class="hint">The stored policy could not be read again, so whether there is one is unknown.</p>
+{{- else if not (or $p.Exists $p.Named)}}<p class="empty">No policy. Write one below to attach it.</p>{{end}}
 <form method="post" action="{{$p.Action}}" class="stack wide">
   {{template "policyfields" .}}
   {{- if $p.Named}}{{if $p.Exists}}<input type="hidden" name="name" value="{{$p.Name}}">
@@ -28,16 +29,17 @@ a web.Policy "CSRF" the token). */}}
     {{- with .Code}}<p><strong>The service answered {{.}}.</strong></p>{{end}}
     <p>{{.Message}}</p>
   </div>{{end}}
+  {{- with $p.Current}}<details class="panel" open><summary>The stored policy now</summary><pre class="body">{{.}}</pre></details>{{end}}
   {{- with $p.Validation}}<div class="{{if .Passed}}banner banner-ok{{else}}failure{{end}}" role="status" id="{{$p.ID}}-validation">
     {{- if .Passed}}<p>The policy passed validation.</p>{{else}}<p><strong>The policy did not pass validation.</strong></p>{{end}}
     {{- range .Findings}}<p>{{with .Check}}<code>{{.}}</code> {{end}}{{.Message}}</p>{{end}}
   </div>{{end}}
   <div class="row">
-    <button type="submit" class="primary">{{if $p.Exists}}Save policy{{else if $p.Named}}Create policy{{else}}Attach policy{{end}}</button>
+    <button type="submit" class="primary">{{if or $p.Exists $p.Unknown}}Save policy{{else if $p.Named}}Create policy{{else}}Attach policy{{end}}</button>
     {{- with $p.ValidateAction}} <button type="submit" formaction="{{.}}">Validate</button>{{end}}
   </div>
 </form>
-{{- if $p.Exists}}
+{{- if or $p.Exists $p.Unknown}}
 <form method="post" action="{{$p.DeleteAction}}" class="inline" data-confirm="Delete the policy{{with $p.Name}} {{.}}{{end}}?">
   {{template "policyfields" .}}{{with $p.Name}}<input type="hidden" name="name" value="{{.}}">{{end}}
   <button type="submit" class="danger">Delete policy</button>
@@ -46,10 +48,10 @@ a web.Policy "CSRF" the token). */}}
 {{- if $p.RemoveAction}}{{with $p.Statements}}
 <h3>Statements</h3>
 <table class="grid">
-  <thead><tr><th scope="col">Sid</th><th scope="col">Effect</th><th scope="col">Principal</th><th scope="col">Action</th><th scope="col">Condition</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+  <thead><tr><th scope="col">Sid</th><th scope="col">Effect</th><th scope="col">Principal</th><th scope="col">Action</th><th scope="col">Resource</th><th scope="col">Condition</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>
   {{- range .}}
-  <tr><td>{{if .Sid}}<code>{{.Sid}}</code>{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Effect}}</td><td><code class="break">{{.Principal}}</code></td><td><code class="break">{{.Action}}</code></td><td><code class="break">{{.Condition}}</code></td>
+  <tr><td>{{if .Sid}}<code>{{.Sid}}</code>{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Effect}}</td><td><code class="break">{{.Principal}}</code></td><td><code class="break">{{.Action}}</code></td><td><code class="break">{{.Resource}}</code></td><td><code class="break">{{.Condition}}</code></td>
   <td class="actions">{{if .Sid}}<form method="post" action="{{$p.RemoveAction}}" class="inline" data-confirm="Remove statement {{.Sid}}?">{{template "policyfields" $}}<input type="hidden" name="{{$p.RemoveField}}" value="{{.Sid}}"><button type="submit" class="quiet danger">Remove</button></form>{{end}}</td></tr>
   {{- end}}
   </tbody>

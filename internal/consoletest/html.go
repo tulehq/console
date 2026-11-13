@@ -2,6 +2,7 @@ package consoletest
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -233,4 +234,32 @@ func Href(doc *html.Node, text string) string {
 		}
 	}
 	return ""
+}
+
+// FormHolding matches a form that holds the element of id.
+func FormHolding(id string) Match {
+	return func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.DataAtom == atom.Form && Find(n, ByID(id)) != nil
+	}
+}
+
+// Hidden returns the hidden fields of the page's first form form matches,
+// the CSRF token left out, with kv set over them: what a browser sends
+// when that form is submitted with those fields filled in.
+func Hidden(r *Response, form Match, kv ...string) url.Values {
+	v := url.Values{}
+	if form := Find(r.Doc, form); form != nil {
+		for _, in := range FindAll(form, Element(atom.Input)) {
+			typ, _ := Attr(in, "type")
+			name, _ := Attr(in, "name")
+			if typ == "hidden" && name != "" && name != "_csrf" {
+				value, _ := Attr(in, "value")
+				v.Add(name, value)
+			}
+		}
+	}
+	for i := 0; i+1 < len(kv); i += 2 {
+		v.Set(kv[i], kv[i+1])
+	}
+	return v
 }

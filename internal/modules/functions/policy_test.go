@@ -121,7 +121,7 @@ func TestFunctionPolicy(t *testing.T) {
 
 	bad := `{"Statement":[{"Effect":"Allow","Action":"lambda:InvokeFunction"}]}`
 	res = b.PostForm("/lambda/function/policy", url.Values{
-		"name": {"echo"}, "arn": {arnPrefix + "echo"}, "document": {bad},
+		"name": {"echo"}, "document": {bad},
 	})
 	consoletest.RequireStatus(t, res, http.StatusBadRequest)
 	consoletest.RequireText(
@@ -135,7 +135,7 @@ func TestFunctionPolicy(t *testing.T) {
 	}
 
 	res = b.PostForm("/lambda/function/policy", url.Values{
-		"name": {"echo"}, "arn": {arnPrefix + "echo"}, "document": {invokePolicy},
+		"name": {"echo"}, "document": {invokePolicy},
 	})
 	page := b.Get(res.Location())
 	consoletest.RequireFlash(t, page, "ok", "Saved the policy of function echo.")
@@ -165,7 +165,7 @@ func TestFunctionPolicy(t *testing.T) {
 
 	rev = revisionOf(t, page)
 	res = b.PostForm("/lambda/function/policy/delete", url.Values{
-		"name": {"echo"}, "arn": {arnPrefix + "echo"}, "revision": {rev},
+		"name": {"echo"}, "revision": {rev},
 	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the policy of function echo.")
 	if _, ok, _ := f.policies.Get("echo"); ok {
@@ -193,4 +193,43 @@ func revisionOf(t *testing.T, page *consoletest.Response) string {
 		t.Fatal("the page sends no RevisionId")
 	}
 	return rev
+}
+
+// TestFunctionPolicyTarget derives the ARN from the function rather than
+// the form, and refuses a first policy when one was attached after the
+// page read none.
+func TestFunctionPolicyTarget(t *testing.T) {
+	f := newFake()
+	f.add("echo")
+	f.add("other")
+	b := start(t, f)
+	page := b.Get("/lambda/function?name=echo")
+	if consoletest.Find(page.Doc, consoletest.ByName("arn")) != nil {
+		t.Fatal("the form posts the function's ARN")
+	}
+	res := b.PostForm("/lambda/function/policy", url.Values{
+		"name": {"echo"}, "arn": {arnPrefix + "other"}, "document": {invokePolicy},
+	})
+	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Saved the policy of function echo.")
+	if _, ok, _ := f.policies.Get("other"); ok {
+		t.Fatal("the posted ARN chose the function")
+	}
+
+	page = b.Get("/lambda/function?name=other")
+	if err := f.policies.Put("other", invokePolicy, "x"); err != nil {
+		t.Fatal(err)
+	}
+	mine := strings.Replace(invokePolicy, "111122223333", "444455556666", 1)
+	res = b.PostForm("/lambda/function/policy", consoletest.Hidden(page,
+		consoletest.FormTo("/lambda/function/policy"), "document", mine))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	consoletest.RequireText(t, res, "The policy changed since the page was loaded")
+	if got := consoletest.Text(
+		consoletest.Find(res.Doc, consoletest.ByName("document")),
+	); got != mine {
+		t.Fatalf("the form holds %q, want the typed document", got)
+	}
+	if doc, _, _ := f.policies.Get("other"); doc != invokePolicy {
+		t.Fatal("the policy attached since was overwritten")
+	}
 }

@@ -37,7 +37,7 @@ func loadPolicy(ctx context.Context, api Lambda, name, arn string) *web.Policy {
 		DeleteAction: Path + "/function/policy/delete",
 		RemoveAction: Path + "/function/permission/remove",
 		RemoveField:  "statementId",
-		Fields:       []web.Field{{Name: "name", Value: name}, {Name: "arn", Value: arn}},
+		Fields:       []web.Field{{Name: "name", Value: name}},
 		Placeholder:  strings.ReplaceAll(policyExample, "FUNCTION", arn),
 	}
 	out, err := api.GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(name)})
@@ -66,6 +66,32 @@ func revision(c gas.Context) *string {
 	return nil
 }
 
+// target returns the ARN of the function name, read from the service
+// rather than taken from the form, and refuses the change when the page
+// was read without a policy (no RevisionId) and the function has one now:
+// the RevisionId guards a policy the page read, and this guards one made
+// since a page that read none.
+func (m *Module) target(c gas.Context, name string) (*string, error) {
+	api := m.clients(c).Lambda
+	out, err := api.GetFunction(c, &lambda.GetFunctionInput{FunctionName: aws.String(name)})
+	if err != nil {
+		return nil, err
+	}
+	if out.Configuration == nil {
+		return nil, &web.MissingField{Operation: "GetFunction", Field: "its Configuration"}
+	}
+	if revision(c) == nil {
+		_, err = api.GetPolicy(c, &lambda.GetPolicyInput{FunctionName: aws.String(name)})
+		switch {
+		case err == nil:
+			return nil, &web.ChangedError{}
+		case web.Code(err) != "ResourceNotFoundException":
+			return nil, err
+		}
+	}
+	return out.Configuration.FunctionArn, nil
+}
+
 // putPolicy stores the posted document as the function's policy with
 // PutResourcePolicy, replacing what AddPermission built. A document
 // functions refuses, such as InvalidParameterValueException, is shown next
@@ -74,11 +100,12 @@ func (m *Module) putPolicy(c gas.Context) error {
 	form := c.Request().PostForm
 	name, doc := form.Get("name"), form.Get("document")
 	var err error
+	var arn *string
 	if strings.TrimSpace(doc) == "" {
 		err = &web.BadInput{Message: "Enter the policy document."}
-	} else {
+	} else if arn, err = m.target(c, name); err == nil {
 		_, err = m.clients(c).Lambda.PutResourcePolicy(c, &lambda.PutResourcePolicyInput{
-			ResourceArn: aws.String(form.Get("arn")),
+			ResourceArn: arn,
 			Policy:      aws.String(doc),
 			RevisionId:  revision(c),
 		})
@@ -92,10 +119,13 @@ func (m *Module) putPolicy(c gas.Context) error {
 func (m *Module) deletePolicy(c gas.Context) error {
 	form := c.Request().PostForm
 	name := form.Get("name")
-	_, err := m.clients(c).Lambda.DeleteResourcePolicy(c, &lambda.DeleteResourcePolicyInput{
-		ResourceArn: aws.String(form.Get("arn")),
-		RevisionId:  revision(c),
-	})
+	arn, err := m.target(c, name)
+	if err == nil {
+		_, err = m.clients(c).Lambda.DeleteResourcePolicy(c, &lambda.DeleteResourcePolicyInput{
+			ResourceArn: arn,
+			RevisionId:  revision(c),
+		})
+	}
 	if err != nil {
 		return m.refused(c, name, "", err)
 	}
@@ -127,7 +157,7 @@ func (m *Module) removePermission(c gas.Context) error {
 func (m *Module) refused(c gas.Context, name, doc string, err error) error {
 	v, lerr := m.load(c, name)
 	if lerr != nil {
-		return m.render.Fail(c, Key, name, lerr)
+		return m.render.FailRefused(c, Key, name, err, lerr)
 	}
 	if doc == "" {
 		doc = v.Policy.Document

@@ -145,3 +145,21 @@ func safeFileName(name string) string {
 	}
 	return name
 }
+
+// RefusedView is the page of a refused action whose page could not be
+// shown again: the action's refusal, and why the page failed.
+type RefusedView struct {
+	Refusal Failure
+	Load    Failure
+}
+
+// FailRefused renders the section's error page for an action refused
+// with refusal whose page then failed to load with loadErr: both are
+// shown, so the refusal is not lost behind the load's failure. The status
+// is the refusal's.
+func (r *Renderer) FailRefused(c gas.Context, section, title string, refusal, loadErr error) error {
+	v := RefusedView{Refusal: Describe(refusal), Load: Describe(loadErr)}
+	return r.Render(c, Page{
+		Name: "refused", Title: title, Section: section, Status: v.Refusal.Status, Data: v,
+	})
+}
