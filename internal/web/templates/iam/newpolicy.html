@@ -1,0 +1,13 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/iam/policies">Policies</a></nav><h1>New policy</h1></div></header>
+<form method="post" action="/iam/policies" class="stack wide">
+  {{template "csrf" .}}
+  <label>Policy name <input name="name" value="{{$d.Name}}" required spellcheck="false"></label>
+  <label>Path <input name="path" value="{{$d.Path}}" placeholder="/" spellcheck="false"></label>
+  <label>Description <input name="description" value="{{$d.Description}}"></label>
+  <label>Policy document, JSON <textarea name="document" rows="18" spellcheck="false" class="mono" required{{if $d.Error}} aria-describedby="form-error"{{end}}>{{$d.Document}}</textarea></label>
+  {{template "formfailure" $d.Error}}
+  <button type="submit" class="primary">Create policy</button>
+</form>
+{{end}}

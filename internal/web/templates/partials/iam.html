@@ -1,0 +1,56 @@
+{{/* Blocks the identity pages share. */}}
+{{define "iamtabs"}}<nav class="tabs" aria-label="Identity">
+  <a href="/iam"{{if eq . "users"}} aria-current="page"{{end}}>Users</a>
+  <a href="/iam/roles"{{if eq . "roles"}} aria-current="page"{{end}}>Roles</a>
+  <a href="/iam/policies"{{if eq . "policies"}} aria-current="page"{{end}}>Policies</a>
+</nav>{{end}}
+
+{{define "formfailure"}}{{with .}}<div class="failure" role="alert" id="form-error">
+  {{- with .Code}}<p><strong>The service answered {{.}}.</strong></p>{{end}}
+  <p>{{.Message}}</p>
+</div>{{end}}{{end}}
+
+{{define "ownerpolicies"}}
+{{- $p := .P}}{{$o := $p.Owner}}
+<h2>Inline policies</h2>
+{{- if $p.InlineErr}}<p class="failure" role="alert">{{$p.InlineErr}}</p>
+{{- else if $p.Inline}}
+<table class="grid">
+  <thead><tr><th scope="col">Policy</th></tr></thead>
+  <tbody>{{range $p.Inline}}<tr><td><a href="{{.Link}}">{{.Name}}</a></td></tr>{{end}}</tbody>
+</table>
+{{- else}}{{template "empty" "No inline policies."}}{{end}}
+<p><a class="button" href="{{$p.NewLink}}">Add inline policy</a></p>
+
+<h2>Attached policies</h2>
+{{- if $p.AttachedErr}}<p class="failure" role="alert">{{$p.AttachedErr}}</p>
+{{- else if $p.Attached}}
+<table class="grid">
+  <thead><tr><th scope="col">Policy</th><th scope="col">ARN</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+  <tbody>
+  {{- range $p.Attached}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a></td><td><code class="break">{{.ARN}}</code></td>
+  <td class="actions"><form method="post" action="/iam/{{$o.Kind}}/detach" class="inline" data-confirm="Detach {{.Name}} from {{$o.Name}}?">{{template "csrf" $}}<input type="hidden" name="{{$o.Kind}}" value="{{$o.Name}}"><input type="hidden" name="arn" value="{{.ARN}}"><button type="submit" class="quiet danger">Detach</button></form></td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{- else}}{{template "empty" "No attached policies."}}{{end}}
+<form method="post" action="/iam/{{$o.Kind}}/attach" class="inline">
+  {{template "csrf" $}}<input type="hidden" name="{{$o.Kind}}" value="{{$o.Name}}">
+  {{- if $p.ChoicesErr}}
+  <label>Policy ARN <input name="arn" required spellcheck="false" placeholder="arn:aws:iam::aws:policy/AdministratorAccess"></label>
+  {{- else}}
+  <label class="sr-only" for="attach-arn">Policy</label>
+  <select id="attach-arn" name="arn"{{if not $p.Truncated}} required{{end}}>
+    <option value="">Choose a policy</option>
+    {{- range $p.Choices}}<option value="{{.ARN}}">{{.Name}} ({{.ARN}})</option>{{end}}
+  </select>
+  {{- if $p.Truncated}}
+  <label>or its ARN <input name="arnTyped" spellcheck="false" placeholder="arn:aws:iam::aws:policy/AdministratorAccess"></label>
+  {{- end}}
+  {{- end}}
+  <button type="submit">Attach policy</button>
+</form>
+{{- with $p.ChoicesErr}}<p class="hint">The policies could not be listed: {{.}}</p>{{end}}
+{{- if $p.Truncated}}<p class="hint">The list holds the first {{$p.Limit}} managed policies only; give the ARN of any other.</p>{{end}}
+{{end}}

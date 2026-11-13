@@ -22,7 +22,7 @@ x-identity: &identity-endpoint
 
 services:
   identity:
-    image: ghcr.io/tulehq/identity:0.1.0
+    image: ghcr.io/tulehq/identity:0.4.0
     environment:
       <<: *root-key
       TULE_Identity_AccountsEndpoint: http://accounts:9020
@@ -30,35 +30,35 @@ services:
     volumes: [identitydata:/data]
 
   accounts:
-    image: ghcr.io/tulehq/accounts:0.2.0
+    image: ghcr.io/tulehq/accounts:0.3.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9020:9020"]
     volumes: [accountsdata:/data]
 
   object-store:
-    image: ghcr.io/tulehq/object-store:0.5.0
+    image: ghcr.io/tulehq/object-store:0.6.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9000:9000"]
     volumes: [objectdata:/data]
 
   secret-store:
-    image: ghcr.io/tulehq/secret-store:0.2.0
+    image: ghcr.io/tulehq/secret-store:0.3.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9010:9010"]
     volumes: [secretdata:/data]
 
   mailbox:
-    image: ghcr.io/tulehq/mailbox:0.1.0
+    image: ghcr.io/tulehq/mailbox:0.2.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9040:9040"]
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.1.0
+    image: ghcr.io/tulehq/queues:0.2.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -67,7 +67,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.1.1
+    image: ghcr.io/tulehq/functions:0.2.0
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}

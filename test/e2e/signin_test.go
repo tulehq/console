@@ -3,6 +3,9 @@
 package e2e
 
 import (
+	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,7 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/gasmod/gas/config"
 
+	"tule.dev/console/internal/app"
 	"tule.dev/console/internal/awsclient"
 	"tule.dev/console/internal/consoletest"
 )
@@ -56,19 +61,17 @@ func TestSignInWithAnIdentityKey(t *testing.T) {
 	user := unique("dev")
 	key := createUserKey(t, user)
 
+	// A user with no policies signs in: GetCallerIdentity needs none.
 	b := browser(t)
 	b.SignIn(key.AccessKeyID, key.SecretAccessKey)
 	res := b.Get("/")
 	consoletest.RequireText(t, res, "arn:aws:iam::000000000000:user/"+user)
 
-	// Every section takes the identity-issued key, as each service does.
-	for _, path := range []string{"/s3", "/secrets", "/mail", "/sqs"} {
-		consoletest.RequireStatus(t, b.Get(path), http.StatusOK)
+	// Every service takes the identity-issued key and denies it everything,
+	// and each section shows that service's AccessDenied.
+	for path, action := range deniedEverywhere() {
+		requireDenied(t, b.Get(path), action)
 	}
-	// Identity holds a user to its permissions, and the page says so.
-	res = b.Get("/iam")
-	consoletest.RequireStatus(t, res, http.StatusForbidden)
-	consoletest.RequireText(t, res, "AccessDenied", "iam:ListUsers")
 
 	// A key identity deactivates is refused from then on.
 	_, err := awsclient.IAM(endpoint("identity"), rootCreds).
@@ -168,11 +171,73 @@ func TestSignInWithARoleSession(t *testing.T) {
 	if strings.Contains(string(res.Body), aws.ToString(c.SessionToken)) {
 		t.Fatal("a page carries the session token")
 	}
-	// The session is an admin principal of its own account in identity.
+	// The session is an admin principal of its own account in identity,
+	// and a principal of another account to object-store, which refuses it
+	// whatever its policies.
 	consoletest.RequireStatus(t, b.Get("/iam"), http.StatusOK)
-	consoletest.RequireStatus(t, b.Get("/s3"), http.StatusOK)
+	res = b.Get("/s3")
+	consoletest.RequireStatus(t, res, http.StatusForbidden)
+	consoletest.RequireText(t, res, "AccessDenied", "no resource-based policy allows")
 
 	// Without its token, the session's key is refused.
 	res = browser(t).TrySignIn(aws.ToString(c.AccessKeyId), aws.ToString(c.SecretAccessKey), "")
 	consoletest.RequireStatus(t, res, http.StatusUnauthorized)
+}
+
+// objectStoreConsole runs a second console pointed at object-store alone,
+// without identity, so a key is checked with ListBuckets. It does not log,
+// so the suite's log check stays the first console's.
+func objectStoreConsole(t *testing.T) *consoletest.Browser {
+	t.Helper()
+	t.Setenv("TULE_GasEnv", "testing")
+	for _, name := range []string{
+		"Identity", "Accounts", "SecretStore", "Mailbox", "Queues", "Functions",
+	} {
+		t.Setenv("TULE_Console_"+name+"Endpoint", "")
+	}
+	t.Setenv("TULE_Console_ObjectStoreEndpoint", stack.urls["object-store"])
+	cfg, err := app.LoadConfigFrom(
+		config.NewEnvProvider(config.WithEnvSeparator("_"), config.WithEnvPrefix("TULE_")),
+	)
+	requireNoErr(t, err, "load the second console's config")
+	a, err := app.New(cfg)
+	requireNoErr(t, err, "build the second console")
+	requireNoErr(t, a.Start(context.Background()), "start the second console")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	requireNoErr(t, err, "listen")
+	served := make(chan error, 1)
+	go func() { served <- a.Server().Serve(l) }()
+	t.Cleanup(func() {
+		if err := a.Stop(context.Background()); err != nil {
+			t.Errorf("stop the second console: %v", err)
+		}
+		if err := <-served; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("serve the second console: %v", err)
+		}
+	})
+	return (&consoletest.Server{URL: "http://" + l.Addr().String()}).Browser(t)
+}
+
+// TestSignInWithoutIdentity signs in to a console that checks keys with
+// object-store's ListBuckets. object-store still verifies the keys identity
+// issued, through identity, and evaluates their policies.
+func TestSignInWithoutIdentity(t *testing.T) {
+	b := objectStoreConsole(t)
+
+	// A wrong secret fails object-store's signature check, and is refused.
+	res := b.TrySignIn(rootKeyID, "not-the-secret", "")
+	consoletest.RequireStatus(t, res, http.StatusUnauthorized)
+	consoletest.RequireText(t, res, "The key was refused")
+
+	// A key with no policies is denied ListBuckets by policy, which only
+	// comes past the signature check: it signs in, and is shown the denial.
+	user := unique("solo")
+	key := createUserKey(t, user)
+	b.SignIn(key.AccessKeyID, key.SecretAccessKey)
+	res = b.Get("/")
+	consoletest.RequireText(t, res, "arn:aws:iam::000000000000:user/"+user)
+	if strings.Contains(consoletest.Text(res.Doc), "Identity") {
+		t.Fatal("the second console has an identity section")
+	}
+	requireDenied(t, b.Get("/s3"), "s3:ListAllMyBuckets")
 }

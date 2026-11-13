@@ -1,0 +1,18 @@
+{{define "content"}}
+{{template "iamtabs" "roles"}}
+<header class="page-head">
+  <h1>Roles</h1>
+  <div class="actions"><a class="button" href="/iam/roles/new">Create role</a></div>
+</header>
+{{if .Data.Roles}}
+<table class="grid">
+  <thead><tr><th scope="col">Role</th><th scope="col">Description</th><th scope="col">Created</th></tr></thead>
+  <tbody>
+  {{- range .Data.Roles}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a><br><code class="muted">{{.ARN}}</code></td><td>{{.Description}}</td><td class="num">{{when .Created}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" .Data}}
+{{else}}{{template "empty" "No roles yet. Create one with a trust policy saying who may assume it."}}{{end}}
+{{end}}

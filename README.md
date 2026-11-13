@@ -66,7 +66,7 @@ x-identity: &identity-endpoint
 
 services:
   identity:
-    image: ghcr.io/tulehq/identity:0.1.0
+    image: ghcr.io/tulehq/identity:0.4.0
     environment:
       <<: *root-key
       TULE_Identity_AccountsEndpoint: http://accounts:9020
@@ -74,35 +74,35 @@ services:
     volumes: [identitydata:/data]
 
   accounts:
-    image: ghcr.io/tulehq/accounts:0.2.0
+    image: ghcr.io/tulehq/accounts:0.3.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9020:9020"]
     volumes: [accountsdata:/data]
 
   object-store:
-    image: ghcr.io/tulehq/object-store:0.5.0
+    image: ghcr.io/tulehq/object-store:0.6.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9000:9000"]
     volumes: [objectdata:/data]
 
   secret-store:
-    image: ghcr.io/tulehq/secret-store:0.2.0
+    image: ghcr.io/tulehq/secret-store:0.3.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9010:9010"]
     volumes: [secretdata:/data]
 
   mailbox:
-    image: ghcr.io/tulehq/mailbox:0.1.0
+    image: ghcr.io/tulehq/mailbox:0.2.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9040:9040"]
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.1.0
+    image: ghcr.io/tulehq/queues:0.2.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -111,7 +111,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.1.1
+    image: ghcr.io/tulehq/functions:0.2.0
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}
@@ -204,13 +204,18 @@ the services are configured with, a key identity issued to a user, and a
 role session's key and token from identity's `AssumeRole`.
 
 The console checks the key by making a signed call with it: identity's
-`GetCallerIdentity` when identity is configured, which also names who
-signed in (shown at the top of every page), and otherwise the cheapest read
-of the first configured service, in the order of the configuration table
-(`ListBuckets`, `ListSecrets`, `DescribeOrganization`, `GetAccount`,
-`ListQueues`, `ListFunctions`). A key the service answers `401` or `403` to
-is refused; a service that cannot be reached is reported as such, and the
-key is not taken.
+`GetCallerIdentity` when identity is configured, which every principal may
+call whatever its policies and which also names who signed in (shown at the
+top of every page), and otherwise the cheapest read of the first configured
+service, in the order of the configuration table (`ListBuckets`,
+`ListSecrets`, `DescribeOrganization`, `GetAccount`, `ListQueues`,
+`ListFunctions`). A key the service answers `401` or `403` to is refused; a
+service that cannot be reached is reported as such, and the key is not
+taken. Without identity, a read the service denies by policy, an
+`AccessDenied` or `AccessDeniedException` in IAM's form ("User: \<arn\> is
+not authorized to perform: ..."), still takes the key and names its
+principal: the services answer it only past the signature check. So a key
+with no policies signs in either way, and is shown what it is denied.
 
 On success the key is held server-side, in a session in memory. The
 browser gets an opaque cookie, `tule_console_session`: a random session ID
@@ -265,6 +270,30 @@ Actions are plain form posts that come back to the page with a message of
 what happened, or what the service answered when it did not. Deleting asks
 first, with JavaScript on.
 
+### Permissions
+
+Every service evaluates identity's policies for the keys identity issued;
+the root key is always allowed, and a principal of another account, such as
+a member account's role session, is refused by every service but identity.
+The console asks for nothing beyond what each page needs and shows what the
+service answers: a page the signed-in principal may not read shows that
+service's `AccessDenied` (or `AccessDeniedException`) and its message, with
+the service's status, `403`, or `400` for secret-store and accounts, as
+Secrets Manager and Organizations answer it. An htmx answer, such as a
+search, a reveal or an invocation filter, is the refusal alone, swapped
+where the answer was to go: the layout's htmx configuration swaps `4xx` and
+`5xx` answers too. An action that is denied comes back to its page with the
+message.
+
+The pages that read a service's inspection API rather than its AWS API need
+Tule's own action `tule:Inspect` on `arn:aws:<service>:<region>:<account>:*`
+besides: mailbox's messages and rendering failures (`ses`), queues' list and
+queue pages (`sqs`), and functions' invocations and each function's last
+invocations (`lambda`). A policy such as `{"Effect": "Allow", "Action":
+["sqs:*", "tule:Inspect"], "Resource": "*"}` grants a section and its
+inspection pages. A function's page without `tule:Inspect` shows its
+configuration and says why its invocations are missing.
+
 ### Object store
 
 `/s3`: the buckets; create a bucket. A bucket's page browses it by prefix,
@@ -304,7 +333,35 @@ status, creation and last use; create a user. A user's page has its keys
 and tags: create a key, whose secret is shown on that one answer only (as
 AWS does; the page is not cached and htmx keeps it out of history),
 activate, deactivate and delete keys, and delete the IAM user, which identity
-refuses while it has keys. The section shows what identity allows the
+refuses while it has keys or policies.
+
+A user's page also has its policies. Its inline policies each open on a
+page of their own with the document, decoded and indented, in a textarea to
+edit and save (`PutUserPolicy`), and a delete; "Add inline policy" opens the
+same form empty, and refuses a name the user's inline policies already have
+rather than replace that policy, as `PutUserPolicy` would. Its attached
+managed policies can be detached, and any of the account's or AWS's managed
+policies attached from a list (`ListPolicies`, up to 1000), or by ARN when
+the list cannot be read or is cut at 1000.
+
+`/iam/roles`: the roles, 50 a page. Create a role with its name, path,
+description, maximum session duration and trust policy, which starts as
+trusting the signed-in account. A role's page has its details, its trust
+policy, and its inline and attached policies, changed as a user's are;
+delete it, which identity refuses while it has policies.
+
+`/iam/policies`: the managed policies, AWS's and the account's, 50 a page,
+with their attachment counts. Create a customer managed policy with its
+name, path, description and document. A policy's page has its details and
+its default version's document; delete it, which identity refuses while it
+is attached or has other versions. AWS's policies cannot be deleted, and
+the page offers no delete for them.
+
+A document identity refuses, `MalformedPolicyDocument` or any other
+validation error, is shown next to its form, with the service's code and
+message and the document as it was typed, so nothing is lost. A list on a
+user's or role's page the principal may not read says so in its place, and
+the rest of the page is shown. The section shows what identity allows the
 signed-in principal: a user without IAM permissions sees identity's
 `AccessDenied`.
 
@@ -387,12 +444,13 @@ shows its service's own readiness.
 ## Limits
 
 - Sessions are in memory, as above.
-- The Functions section is built against functions' design and README, as
-  functions has no release yet. Its end-to-end tests run against a
-  functions checkout and a Docker daemon when both are there, and are
-  skipped otherwise; CI checks out no functions until it releases.
-- Out of scope: editing policies, IAM beyond users and keys, the rarely used
-  operations of each API, and views across accounts beyond what the
+- The Functions section's end-to-end tests run against a functions
+  checkout and a Docker daemon when both are there, and are skipped
+  otherwise.
+- Out of scope: policy versions beyond the default's document, editing a
+  role's trust policy after it is created, groups, permissions boundaries
+  and the rest of IAM beyond users, roles, keys and policies, the rarely
+  used operations of each API, and views across accounts beyond what the
   signed-in principal's calls return.
 
 ## Development
@@ -414,9 +472,17 @@ browser is involved.
 The end-to-end tests build object-store, secret-store, accounts, identity,
 mailbox and queues from their checkouts and run them as processes, all with
 one root key and all pointed at that identity, and run the console against
-them. They sign in with the root key and with a key identity issued, drive
-each section's pages and actions, and check each effect with the service's
-own SDK. They also check that the console's log, captured at trace level,
+them. They sign in with the root key, with keys identity issued, and with
+role sessions, drive each section's pages and actions, and check each effect
+with the service's own SDK. A user with no policies is shown each service's
+`AccessDenied`; one allowed only `s3:ListAllMyBuckets` sees the buckets and
+is denied everything else; one allowed the AWS APIs of mailbox, queues and
+functions is denied their inspection pages until it is allowed
+`tule:Inspect`; a second console pointed at object-store alone, without
+identity, refuses a wrong secret and signs in a key with no policies; the
+root key sees every page; and a managed policy and a
+role created through the console, the one attached to the other, give the
+role's sessions what the policy allows. They also check that the console's log, captured at trace level,
 holds none of the secrets they handled. Each checkout is the console's
 sibling, `../<service>`, by default, or the directory
 `TULE_E2E_<SERVICE>_DIR` names (`TULE_E2E_OBJECT_STORE_DIR` and so on); CI
@@ -424,7 +490,8 @@ checks out each at its latest release and sets them. Without a checkout the
 tests fail rather than being skipped. functions is the exception, as under
 Limits: with `../functions` or `TULE_E2E_FUNCTIONS_DIR` and a Docker daemon,
 the tests build a Go function from `test/e2e/testdata` into an image `FROM
-scratch` (nothing is pulled) and drive functions through the console too.
+scratch` (nothing is pulled) and drive functions through the console too,
+the function running with an execution role the tests create in identity.
 
 ## License
 

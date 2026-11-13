@@ -4,7 +4,7 @@
   <div><nav class="crumbs" aria-label="Location"><a href="/iam">Users</a></nav><h1>{{$d.Name}}</h1></div>
   <div class="actions">
     <form method="post" action="/iam/keys" class="inline">{{template "csrf" .}}<input type="hidden" name="user" value="{{$d.Name}}"><button type="submit" class="primary">Create access key</button></form>
-    <form method="post" action="/iam/users/delete" class="inline" data-confirm="Delete user {{$d.Name}}? Delete its keys first.">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Name}}"><button type="submit" class="danger">Delete user</button></form>
+    <form method="post" action="/iam/users/delete" class="inline" data-confirm="Delete user {{$d.Name}}? Delete its keys and policies first.">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Name}}"><button type="submit" class="danger">Delete user</button></form>
   </div>
 </header>
 <dl class="facts">
@@ -34,5 +34,6 @@
   </tbody>
 </table>
 {{else}}{{template "empty" "No access keys. A user has at most two."}}{{end}}
+{{template "ownerpolicies" (dict "P" $d.Policies "CSRF" .CSRF)}}
 {{with $d.Tags}}<h2>Tags</h2><table class="grid kv"><tbody>{{range .}}<tr><th scope="row">{{.Key}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table>{{end}}
 {{end}}

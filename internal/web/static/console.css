@@ -135,6 +135,12 @@ main:focus { outline: none; }
 
 .actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 
+/* Tabs move between the lists of one section. */
+
+.tabs { display: flex; gap: 0.2rem; flex-wrap: wrap; margin: 0 0 1rem; border-bottom: 1px solid var(--line); }
+.tabs a { padding: 0.35rem 0.8rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
 .break { overflow-wrap: anywhere; }
 .nowrap { white-space: nowrap; }
 .muted { color: var(--muted); }
@@ -230,6 +236,7 @@ button.quiet { border-color: transparent; background: transparent; color: var(--
 button.quiet.danger { color: var(--danger); border-color: transparent; }
 
 .stack { display: flex; flex-direction: column; gap: 0.75rem; max-width: 40rem; }
+.stack.wide { max-width: 56rem; }
 .stack button { align-self: flex-start; }
 
 .toolbar, .filters {

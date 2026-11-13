@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -19,6 +21,45 @@ import (
 	"tule.dev/console/internal/modules/functions"
 )
 
+// executionRole is the role the echo functions run with: it trusts Lambda,
+// and may poll a queue, as a mapping's role must. It is created once, the
+// first time a test asks for it.
+var executionRole struct {
+	err  error
+	arn  string
+	once sync.Once
+}
+
+// lambdaRole returns the execution role's ARN, creating the role in
+// identity with the root key the first time.
+func lambdaRole(t *testing.T) string {
+	t.Helper()
+	executionRole.once.Do(func() {
+		ic := awsclient.IAM(endpoint("identity"), rootCreds)
+		name := unique("lambda-")
+		out, err := ic.CreateRole(t.Context(), &iam.CreateRoleInput{
+			RoleName: aws.String(name),
+			AssumeRolePolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[` +
+				`{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},` +
+				`"Action":"sts:AssumeRole"}]}`),
+		})
+		if err != nil {
+			executionRole.err = err
+			return
+		}
+		_, executionRole.err = ic.PutRolePolicy(t.Context(), &iam.PutRolePolicyInput{
+			RoleName:   aws.String(name),
+			PolicyName: aws.String("poll"),
+			PolicyDocument: aws.String(`{"Version":"2012-10-17","Statement":[{"Effect":"Allow",` +
+				`"Action":["sqs:ReceiveMessage","sqs:DeleteMessage","sqs:GetQueueAttributes",` +
+				`"sqs:GetQueueUrl"],"Resource":"*"}]}`),
+		})
+		executionRole.arn = aws.ToString(out.Role.Arn)
+	})
+	requireNoErr(t, executionRole.err, "create the execution role")
+	return executionRole.arn
+}
+
 // createEcho creates a function of the echo image and waits until it is
 // Active, deleting it when the test ends.
 func createEcho(t *testing.T, sdk *lambda.Client, name string) {
@@ -27,7 +68,7 @@ func createEcho(t *testing.T, sdk *lambda.Client, name string) {
 		FunctionName:  aws.String(name),
 		PackageType:   types.PackageTypeImage,
 		Code:          &types.FunctionCode{ImageUri: aws.String(fn.image)},
-		Role:          aws.String("arn:aws:iam::000000000000:role/lambda"),
+		Role:          aws.String(lambdaRole(t)),
 		Architectures: []types.Architecture{types.Architecture(hostArch())},
 		Environment:   &types.Environment{Variables: map[string]string{"STAGE": "e2e"}},
 	})

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"tule.dev/console/internal/awsclient"
@@ -83,8 +85,11 @@ type check struct {
 
 // NewVerifier returns the verifier of the configured services: identity's
 // GetCallerIdentity when identity is configured, which also names the
-// principal; else the cheapest read of the first configured service, in
-// the order the console lists them.
+// principal and which every principal may call; else the cheapest read of
+// the first configured service, in the order the console lists them. A
+// read the service denies by policy still verifies the key, and names its
+// principal, so a key without permissions signs in and is shown what it
+// may not do.
 func NewVerifier(e Endpoints) (Verifier, error) {
 	c, ok := firstCheck(e)
 	if !ok {
@@ -94,6 +99,12 @@ func NewVerifier(e Endpoints) (Verifier, error) {
 		ctx, cancel := context.WithTimeout(ctx, verifyTimeout)
 		defer cancel()
 		p, err := c.call(ctx, creds)
+		if arn, ok := deniedByPolicy(err); ok && c.service != "identity" {
+			// The service verified the key and then found no policy that
+			// allows the read: the key is good, and its principal may
+			// still be allowed elsewhere, or be shown that it is not.
+			p, err = session.Principal{ARN: arn}, nil
+		}
 		if err != nil {
 			if refused(err) {
 				return session.Principal{}, fmt.Errorf("%s: %w", c.service, ErrRefused)
@@ -226,6 +237,31 @@ func listFunctions(
 		return session.Principal{}, fmt.Errorf("ListFunctions: %w", err)
 	}
 	return session.Principal{}, nil
+}
+
+// deniedByPolicy reports whether err is a service's AccessDenied for a
+// request no policy allows, and returns the principal the denial names.
+// Every Tule service answers it, as AWS does, only past the signature
+// check, in IAM's form: "User: <arn> is not authorized to perform: ...".
+// A bare AccessDenied is not one: object-store answers some malformed
+// signatures with it.
+func deniedByPolicy(err error) (string, bool) {
+	var apiErr smithy.APIError
+	if err == nil || !errors.As(err, &apiErr) {
+		return "", false
+	}
+	if code := apiErr.ErrorCode(); code != "AccessDenied" && code != "AccessDeniedException" {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(apiErr.ErrorMessage(), "User: ")
+	if !ok {
+		return "", false
+	}
+	arn, _, ok := strings.Cut(rest, " is not authorized to perform: ")
+	if !ok || !strings.HasPrefix(arn, "arn:") {
+		return "", false
+	}
+	return arn, true
 }
 
 // refused reports whether err is the service refusing the key.

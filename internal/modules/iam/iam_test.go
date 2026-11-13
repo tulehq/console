@@ -28,19 +28,28 @@ type key struct {
 }
 
 type user struct {
-	name string
-	tags []types.Tag
-	keys []*key
+	inline   map[string]string
+	name     string
+	tags     []types.Tag
+	keys     []*key
+	attached []string
 }
 
-// fakeIAM is IAM's users and keys in memory.
+// fakeIAM is IAM's users and keys, roles and managed policies in memory.
 type fakeIAM struct {
-	users map[string]*user
-	n     int
-	mu    sync.Mutex
+	users   map[string]*user
+	roles   map[string]*role
+	managed map[string]*managed
+	n       int
+	mu      sync.Mutex
 }
 
-func newFake() *fakeIAM { return &fakeIAM{users: map[string]*user{}} }
+func newFake() *fakeIAM {
+	return &fakeIAM{
+		users: map[string]*user{}, roles: map[string]*role{},
+		managed: map[string]*managed{adminARN: {name: "AdministratorAccess", doc: adminDoc}},
+	}
+}
 
 func noSuch(what string) error {
 	return &smithy.GenericAPIError{
@@ -139,6 +148,12 @@ func (f *fakeIAM) DeleteUser(
 	u, err := f.find(*in.UserName)
 	if err != nil {
 		return nil, err
+	}
+	if len(u.inline) > 0 || len(u.attached) > 0 {
+		return nil, &smithy.GenericAPIError{
+			Code:    "DeleteConflict",
+			Message: "Cannot delete entity, must delete policies first.",
+		}
 	}
 	if len(u.keys) > 0 {
 		return nil, &smithy.GenericAPIError{

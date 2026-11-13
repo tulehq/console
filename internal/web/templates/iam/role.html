@@ -1,0 +1,20 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div><nav class="crumbs" aria-label="Location"><a href="/iam/roles">Roles</a></nav><h1>{{$d.Name}}</h1></div>
+  <div class="actions">
+    <form method="post" action="/iam/roles/delete" class="inline" data-confirm="Delete role {{$d.Name}}? Detach and delete its policies first.">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Name}}"><button type="submit" class="danger">Delete role</button></form>
+  </div>
+</header>
+<dl class="facts">
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>Role ID</dt><dd><code>{{$d.ID}}</code></dd>
+  <dt>Path</dt><dd><code>{{$d.Path}}</code></dd>
+  {{with $d.Description}}<dt>Description</dt><dd>{{.}}</dd>{{end}}
+  <dt>Maximum session</dt><dd>{{$d.MaxSession}} s</dd>
+  <dt>Created</dt><dd>{{when $d.Created}}</dd>
+</dl>
+<h2>Trust policy</h2>
+<pre class="body">{{$d.Trust}}</pre>
+{{template "ownerpolicies" (dict "P" $d.Policies "CSRF" .CSRF)}}
+{{end}}
