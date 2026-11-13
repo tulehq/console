@@ -336,10 +336,18 @@ refuses the change with `409`, "The policy changed since the page was
 loaded", next to the form, which keeps the document as sent and shows the
 stored one below it. Saving again from that answer replaces the policy as it
 is now. A function's policy is guarded by its `RevisionId` instead, and by
-this check when the page read none. The check and the write are two calls,
-so a change in between is not caught; creating a named sending authorization
-policy is not checked, as mailbox refuses a name the identity has. Removing
-one statement by its `Sid` loses nothing else and is not checked.
+this check when the page read none. A user or role a policy names that is
+deleted after the page was read is such a change for a bucket, a secret, a
+queue and an email identity, since the service's read then shows its unique
+ID where the page read its ARN: the save is refused with `409`, the unique
+ID in the stored policy shown below the form. Deleting a principal does not
+change a function's `RevisionId`, so a function's save from that page goes
+through and stores the document as sent; one that still names the deleted
+ARN is refused by functions as naming no principal. The check and the write
+are two calls, so a change in between is not caught; creating a named
+sending authorization policy is not checked, as mailbox refuses a name the
+identity has. Removing one statement by its `Sid` loses nothing else and is
+not checked.
 
 A policy the signed-in principal may not read, such as without
 `s3:GetBucketPolicy`, shows the service's `AccessDenied` (or
@@ -570,16 +578,18 @@ refused each save; and a save from a page read before the SDK changed the
 policy is refused, the change kept; and a policy of each resource naming a
 user that is then deleted shows that IAM user's unique ID, is saved again
 from the page with it, and a save naming the deleted user's ARN is refused
-next to the form. They also check that the console's log, captured at trace
-level, holds none of the secrets they handled. Each checkout is the
-console's sibling, `../<service>`, by default, or the directory
-`TULE_E2E_<SERVICE>_DIR` names (`TULE_E2E_OBJECT_STORE_DIR` and so on); CI
-checks out each at its latest release and sets them. Without a checkout the
-tests fail rather than being skipped. functions is the exception, as under
-Limits: with `../functions` or `TULE_E2E_FUNCTIONS_DIR` and a Docker daemon,
-the tests build a Go function from `test/e2e/testdata` into an image `FROM
-scratch` (nothing is pulled) and drive functions through the console too,
-the function running with an execution role the tests create in identity.
+next to the form, and a save from a page read before that user was deleted
+is refused as a change made since, but for a function's, which goes through.
+They also check that the console's log, captured at trace level, holds none
+of the secrets they handled. Each checkout is the console's sibling,
+`../<service>`, by default, or the directory `TULE_E2E_<SERVICE>_DIR` names
+(`TULE_E2E_OBJECT_STORE_DIR` and so on); CI checks out each at its latest
+release and sets them. Without a checkout the tests fail rather than being
+skipped. functions is the exception, as under Limits: with `../functions` or
+`TULE_E2E_FUNCTIONS_DIR` and a Docker daemon, the tests build a Go function
+from `test/e2e/testdata` into an image `FROM scratch` (nothing is pulled)
+and drive functions through the console too, the function running with an
+execution role the tests create in identity.
 
 ## License
 
