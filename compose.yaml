@@ -85,7 +85,7 @@ services:
     group_add: ["${DOCKER_GID:-0}"]
 
   console:
-    image: ghcr.io/tulehq/console:0.1.0
+    image: ghcr.io/tulehq/console:0.2.1
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
