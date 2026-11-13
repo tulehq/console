@@ -224,9 +224,15 @@ the session's `TULE_Console_SessionTTL` passing, drops the key.
 **Sessions live in memory.** A restart, which also makes a new cookie key,
 signs everyone out. Sessions are not shared between two consoles.
 
-Every request but sign-in, the static files and the probes needs a session;
-a signed-out page request is sent to sign-in, and comes back to the page
-after it. Signing in again from a signed-in browser ends its old session.
+Every request but sign-in, the static files, the probes, `/favicon.ico`
+(always `404`; pages declare no icon) and `/robots.txt` (which disallows
+everything) needs a session. A signed-out page the browser opens is sent to
+sign-in, and comes back to it after; an HTMX request is told to go there;
+anything else, a form post, an asset or a background fetch, gets `401`
+without a redirect, so it never loads the sign-in page behind an open form.
+The sign-in form's token lasts an hour and is kept while it does: opening
+the sign-in page again, in a tab or by a background request, leaves an
+open form's token good. Signing in again from a signed-in browser ends its old session.
 A key holds at most `TULE_Console_MaxSessionsPerKey` sessions, its oldest
 ending when it signs in past that, and the console at most
 `TULE_Console_MaxSessions`, past which sign-in is refused with a message

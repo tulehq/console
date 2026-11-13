@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/gasmod/gas"
@@ -41,10 +42,36 @@ func WithSession(ctx context.Context, sess *session.Session) context.Context {
 }
 
 // Public reports whether a path is served without a session: the sign-in
-// page, the static files and the probes.
+// page, the static files, the probes, and the files browsers and crawlers
+// ask a site for on their own, which a page of the console never is.
 func Public(path string) bool {
-	return path == SignInPath || path == "/_health" || path == "/_ready" ||
-		strings.HasPrefix(path, "/static/")
+	switch path {
+	case SignInPath, "/_health", "/_ready", "/favicon.ico", "/robots.txt":
+		return true
+	}
+	return strings.HasPrefix(path, "/static/")
+}
+
+// pageNavigation reports whether r is the browser opening a page: a GET or
+// HEAD that is a top-level navigation, by its Sec-Fetch headers when it
+// has them, and never an HTMX request or a path with a file extension,
+// which no page of the console has. Only a navigation is sent to sign-in;
+// a background request, such as a browser's icon fetch, that followed a
+// redirect there would load the sign-in page behind an open form.
+func pageNavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		return false
+	}
+	if mode := r.Header.Get("Sec-Fetch-Mode"); mode != "" && mode != "navigate" {
+		return false
+	}
+	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "document" {
+		return false
+	}
+	return !strings.Contains(path.Base(r.URL.Path), ".")
 }
 
 // Guard is the middleware that signs every request but the public ones in:
@@ -88,19 +115,25 @@ func safeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead
 }
 
-// signedOut sends a request without a session to sign-in: an HTMX request
-// by HX-Redirect, since a redirect would only swap the sign-in page into a
-// fragment, and a page by a 303 that comes back to it after sign-in.
+// signedOut answers a request without a session. A page navigation is
+// sent to sign-in by a 303 that comes back to it after; an HTMX request is
+// told to go there by HX-Redirect, since a redirect would only swap the
+// sign-in page into a fragment. Anything else, a form post, an asset or a
+// background fetch, is a 401 that sends nowhere.
 func signedOut(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	target := SignInPath
-	if r.Method == http.MethodGet && r.URL.Path != "/" {
-		target += "?" + url.Values{"next": {r.URL.RequestURI()}}.Encode()
-	}
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", target)
+		w.Header().Set("HX-Redirect", SignInPath)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
+	}
+	if !pageNavigation(r) {
+		WriteErrorPage(w, http.StatusUnauthorized, "Sign in to continue.")
+		return
+	}
+	target := SignInPath
+	if r.URL.Path != "/" {
+		target += "?" + url.Values{"next": {r.URL.RequestURI()}}.Encode()
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -402,8 +403,45 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// RandomToken returns a fresh random token, for the sign-in form's CSRF
-// cookie.
-func RandomToken() (string, error) {
-	return randomToken()
+// FormTokenTTL is how long a sign-in form's token is good for.
+const FormTokenTTL = time.Hour
+
+// NewFormToken returns a token for the sign-in form, before there is a
+// session to hold one: random, with its expiry, under the store's HMAC,
+// so ValidFormToken can tell a token the store issued that is still good
+// from any other.
+func (s *Store) NewFormToken() (string, error) {
+	r, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	expires := s.now().Add(FormTokenTTL).Unix()
+	s.mu.Unlock()
+	body := r + "." + strconv.FormatInt(expires, 10)
+	return body + "." + s.mac("form."+body), nil
+}
+
+// ValidFormToken reports whether token is a sign-in form token the store
+// issued and that has not expired.
+func (s *Store) ValidFormToken(token string) bool {
+	i := strings.LastIndexByte(token, '.')
+	if i < 0 {
+		return false
+	}
+	body, mac := token[:i], token[i+1:]
+	if !hmac.Equal([]byte(mac), []byte(s.mac("form."+body))) {
+		return false
+	}
+	_, exp, ok := strings.Cut(body, ".")
+	if !ok {
+		return false
+	}
+	expires, err := strconv.ParseInt(exp, 10, 64)
+	if err != nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.now().Unix() < expires
 }

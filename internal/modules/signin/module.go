@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/gasmod/gas"
@@ -62,6 +61,7 @@ func (m *Module) Init(context.Context) error {
 	m.router.Post(m, web.SignInPath, m.signIn)
 	m.router.Post(m, "/signout", m.signOut)
 	m.router.Get(m, "/", m.overview)
+	m.router.Get(m, "/robots.txt", robots)
 	return nil
 }
 
@@ -82,13 +82,26 @@ func (m *Module) signInPage(c gas.Context) error {
 	return m.showForm(c, http.StatusOK, c.Query("next"), "")
 }
 
-// showForm renders the sign-in form with a fresh form token and its cookie.
+// showForm renders the sign-in form with the browser's form token. A token
+// the browser holds and that is still good is kept, so a second render of
+// the form, such as one a background request follows to, never leaves an
+// open form with a token that no longer matches; a new one is issued only
+// when the browser has none, or one that is forged or expired.
 func (m *Module) showForm(c gas.Context, status int, next, message string) error {
-	token, err := session.RandomToken()
-	if err != nil {
-		return err
+	token := ""
+	if cookie, err := c.Request().
+		Cookie(formCookie); err == nil &&
+		m.deps.Store.ValidFormToken(cookie.Value) {
+		token = cookie.Value
 	}
-	http.SetCookie(c.ResponseWriter(), m.formCookie(c.Request(), token, int(time.Hour.Seconds())))
+	if token == "" {
+		var err error
+		if token, err = m.deps.Store.NewFormToken(); err != nil {
+			return err
+		}
+		http.SetCookie(c.ResponseWriter(),
+			m.formCookie(c.Request(), token, int(session.FormTokenTTL.Seconds())))
+	}
 	c.SetHeader("Cache-Control", "no-store")
 	if !web.LocalPath(next) {
 		next = ""
@@ -112,7 +125,7 @@ func (m *Module) signIn(c gas.Context) error {
 		return m.showForm(c, http.StatusTooManyRequests, next,
 			"Too many failed sign-ins from this address. Wait a minute and try again.")
 	}
-	if !formTokenOK(r) {
+	if !m.formTokenOK(r) {
 		m.deps.Limiter.Fail(r)
 		return m.showForm(c, http.StatusForbidden, next,
 			"The sign-in form expired. Enter the key again.")
@@ -212,10 +225,10 @@ func formCredentials(form url.Values) (aws.Credentials, string) {
 }
 
 // formTokenOK reports whether the form posted back the token its cookie
-// holds.
-func formTokenOK(r *http.Request) bool {
+// holds, and that token is one the store issued and still good.
+func (m *Module) formTokenOK(r *http.Request) bool {
 	cookie, err := r.Cookie(formCookie)
-	if err != nil || cookie.Value == "" {
+	if err != nil || !m.deps.Store.ValidFormToken(cookie.Value) {
 		return false
 	}
 	posted := r.PostForm.Get(web.CSRFField)
@@ -229,6 +242,11 @@ func (m *Module) signOut(c gas.Context) error {
 	http.SetCookie(c.ResponseWriter(), m.deps.Store.ExpiredCookie(c.Request()))
 	c.Redirect(http.StatusSeeOther, web.SignInPath)
 	return nil
+}
+
+// robots asks crawlers to keep out: the console is a tool, not a site.
+func robots(c gas.Context) error {
+	return c.Text(http.StatusOK, "User-agent: *\nDisallow: /\n")
 }
 
 func (m *Module) overview(c gas.Context) error {

@@ -197,8 +197,12 @@ func TestSignedOutRedirects(t *testing.T) {
 		t.Fatal("an HTMX request is not sent to sign-in")
 	}
 
+	// A signed-out post is not a page to come back to: it is refused.
 	res = b.PostForm("/s3/buckets", url.Values{"bucket": {"x"}})
-	consoletest.RequireStatus(t, res, http.StatusSeeOther)
+	consoletest.RequireStatus(t, res, http.StatusUnauthorized)
+	if res.Location() != "" {
+		t.Fatalf("a signed-out post redirects to %q", res.Location())
+	}
 
 	// After sign-in the browser comes back where it was going, and only to
 	// a page of the console.
@@ -490,5 +494,164 @@ func TestUnreachableVerifierShowsNoDetail(t *testing.T) {
 		if strings.Contains(string(res.Body), detail) {
 			t.Fatalf("the sign-in page shows %q: %s", detail, consoletest.Text(res.Doc))
 		}
+	}
+}
+
+// follow gets path as a browser's background fetch does, following
+// redirects as the browser would, and returns the last answer.
+func follow(b *consoletest.Browser, path string, header map[string]string) *consoletest.Response {
+	for range 5 {
+		req := b.Request(http.MethodGet, path, http.NoBody)
+		for k, v := range header {
+			req.Header.Set(k, v)
+		}
+		res := b.Do(req)
+		if res.Status < 300 || res.Status > 399 {
+			return res
+		}
+		path = res.Location()
+	}
+	return nil
+}
+
+// formToken returns the _csrf of the sign-in form on res.
+func formToken(t *testing.T, res *consoletest.Response) string {
+	t.Helper()
+	v, ok := consoletest.Attr(consoletest.Find(res.Doc, consoletest.ByName("_csrf")), "value")
+	if !ok || v == "" {
+		t.Fatalf("no sign-in token on the page: %s", consoletest.Text(res.Doc))
+	}
+	return v
+}
+
+func postKey(b *consoletest.Browser, token string) *consoletest.Response {
+	return b.PostForm("/signin", url.Values{
+		"_csrf": {
+			token,
+		},
+		"accessKeyId":     {consoletest.KeyID},
+		"secretAccessKey": {consoletest.Secret},
+	})
+}
+
+// TestIconFetchKeepsTheSignInForm is the browser's sequence: it opens the
+// sign-in page, fetches the site's icon in the background, and then the
+// form is sent with the token it was rendered with.
+func TestIconFetchKeepsTheSignInForm(t *testing.T) {
+	b := start(t).Browser(t)
+	token := formToken(t, b.Get("/signin"))
+
+	icon := follow(
+		b,
+		"/favicon.ico",
+		map[string]string{"Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors"},
+	)
+	consoletest.RequireStatus(t, icon, http.StatusNotFound)
+	// Without the Sec-Fetch headers, as an older browser sends it, too.
+	consoletest.RequireStatus(t, follow(b, "/favicon.ico", nil), http.StatusNotFound)
+
+	consoletest.RequireStatus(t, postKey(b, token), http.StatusSeeOther)
+}
+
+func TestSecondRenderKeepsTheFirstForm(t *testing.T) {
+	b := start(t).Browser(t)
+	first := formToken(t, b.Get("/signin"))
+	second := formToken(t, b.Get("/signin?next=%2Fs3"))
+	if first != second {
+		t.Fatal("a second render of the sign-in page changed the token")
+	}
+	consoletest.RequireStatus(t, postKey(b, first), http.StatusSeeOther)
+}
+
+// TestRetryAfterAForgedToken covers the 403 page: it renders the form
+// again, and sending that form signs in.
+func TestRetryAfterAForgedToken(t *testing.T) {
+	b := start(t).Browser(t)
+	b.Get("/signin")
+	res := postKey(b, "forged")
+	consoletest.RequireStatus(t, res, http.StatusForbidden)
+	consoletest.RequireText(t, res, "The sign-in form expired")
+	consoletest.RequireStatus(t, postKey(b, formToken(t, res)), http.StatusSeeOther)
+}
+
+// TestRetryAfterTheTokenExpired covers an expired token: the 403 page has a
+// fresh one, which signs in.
+func TestRetryAfterTheTokenExpired(t *testing.T) {
+	s := start(t)
+	now := time.Now()
+	s.Store.SetClock(func() time.Time { return now })
+	b := s.Browser(t)
+	old := formToken(t, b.Get("/signin"))
+	now = now.Add(session.FormTokenTTL)
+	res := postKey(b, old)
+	consoletest.RequireStatus(t, res, http.StatusForbidden)
+	fresh := formToken(t, res)
+	if fresh == old {
+		t.Fatal("the 403 page kept the expired token")
+	}
+	consoletest.RequireStatus(t, postKey(b, fresh), http.StatusSeeOther)
+}
+
+func TestForgedTokenCookieIsReplaced(t *testing.T) {
+	s := start(t)
+	b := s.Browser(t)
+	req := b.Request(http.MethodGet, "/signin", http.NoBody)
+	//nolint:gosec // G124: a forged cookie, as a client could send it
+	req.AddCookie(&http.Cookie{Name: "tule_console_signin", Value: "chosen-by-the-client"})
+	res := b.Do(req)
+	if token := formToken(t, res); token == "chosen-by-the-client" {
+		t.Fatal("the form took a token the console did not issue")
+	}
+}
+
+func TestSignedOutBackgroundRequestsDoNotRedirect(t *testing.T) {
+	b := start(t).Browser(t)
+	for _, tt := range []struct {
+		header map[string]string
+		path   string
+		status int
+	}{
+		{path: "/favicon.ico", status: http.StatusNotFound},
+		{path: "/robots.txt", status: http.StatusOK},
+		{path: "/static/nope.css", status: http.StatusNotFound},
+		{path: "/s3/logo.png", status: http.StatusUnauthorized},
+		{
+			path: "/s3", status: http.StatusUnauthorized,
+			header: map[string]string{"Sec-Fetch-Dest": "image", "Sec-Fetch-Mode": "no-cors"},
+		},
+		{
+			path: "/s3", status: http.StatusUnauthorized,
+			header: map[string]string{"Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors"},
+		},
+	} {
+		req := b.Request(http.MethodGet, tt.path, http.NoBody)
+		for k, v := range tt.header {
+			req.Header.Set(k, v)
+		}
+		res := b.Do(req)
+		if res.Status != tt.status || res.Location() != "" {
+			t.Errorf("%s %v: status %d, Location %q; want %d and no redirect",
+				tt.path, tt.header, res.Status, res.Location(), tt.status)
+		}
+	}
+	robots := b.Get("/robots.txt")
+	if string(robots.Body) != "User-agent: *\nDisallow: /\n" {
+		t.Fatalf("robots.txt %q", robots.Body)
+	}
+
+	// A page the browser opens is still sent to sign-in.
+	req := b.Request(http.MethodGet, "/s3", http.NoBody)
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	res := b.Do(req)
+	if res.Status != http.StatusSeeOther || res.Location() != "/signin?next=%2Fs3" {
+		t.Fatalf("navigation: %d %q", res.Status, res.Location())
+	}
+}
+
+func TestPagesDeclareNoIcon(t *testing.T) {
+	res := start(t).Browser(t).Get("/signin")
+	if !strings.Contains(string(res.Body), `<link rel="icon" href="data:,">`) {
+		t.Fatal("the page leaves the browser to fetch /favicon.ico")
 	}
 }

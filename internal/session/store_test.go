@@ -291,3 +291,30 @@ func TestUploadSlots(t *testing.T) {
 		t.Fatal("a finished upload did not free its slot")
 	}
 }
+
+func TestFormToken(t *testing.T) {
+	s, now := newStore(t, time.Hour)
+	token, err := s.NewFormToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.ValidFormToken(token) {
+		t.Fatal("a fresh form token is refused")
+	}
+	other, err := session.NewStore(time.Hour, false, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, _ := other.NewFormToken()
+	_, cookie := create(t, s, session.Principal{})
+	i := strings.LastIndexByte(token, '.')
+	for _, bad := range []string{"", "x", token + "x", token[:i] + ".", "a.99999999999." + token[i+1:], foreign, cookie} {
+		if s.ValidFormToken(bad) {
+			t.Fatalf("form token %q accepted", bad)
+		}
+	}
+	*now = now.Add(session.FormTokenTTL)
+	if s.ValidFormToken(token) {
+		t.Fatal("an expired form token is accepted")
+	}
+}

@@ -40,10 +40,11 @@ func Static() fs.FS {
 var errorPage = template.Must(template.New("error").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · Tule console</title>
+<title>{{.Title}} | Tule console</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/console.css"></head>
 <body class="bare"><main class="bare-main">
-<h1>{{.Title}}</h1><p>{{.Message}}</p><p><a href="/">Go to the overview</a></p>
+<h1>{{.Title}}</h1><p>{{.Message}}</p><p><a href="/">Go to the console</a></p>
 </main></body></html>`))
 
 // WriteErrorPage writes the plain error page for status with message.
