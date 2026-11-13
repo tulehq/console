@@ -1,0 +1,12 @@
+{{define "content"}}
+{{$d := .Data}}
+<div hx-history="false">
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/iam">Users</a> <span aria-hidden="true">/</span> <a href="{{$d.UserLink}}">{{$d.User}}</a></nav><h1>New access key</h1></div></header>
+<p class="banner banner-warn" role="status">This is the only time the secret is shown. Copy it now; it cannot be read again.</p>
+<dl class="facts">
+  <dt>Access key ID</dt><dd><code class="secret">{{$d.ID}}</code></dd>
+  <dt>Secret access key</dt><dd><code class="secret">{{$d.Secret}}</code></dd>
+</dl>
+<p><a class="button" href="{{$d.UserLink}}">Back to {{$d.User}}</a></p>
+</div>
+{{end}}

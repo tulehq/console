@@ -1,0 +1,12 @@
+{{define "csrf"}}<input type="hidden" name="_csrf" value="{{.CSRF}}">{{end}}
+
+{{define "dot"}}<span class="dot {{if eq .State "ready"}}dot-ok{{else if eq .State "not ready"}}dot-warn{{else}}dot-down{{end}}" role="img" aria-label="{{.State}}" title="{{.State}}{{with .Detail}}: {{.}}{{end}}"></span>{{end}}
+
+{{define "flash"}}{{with .Flash}}<p class="banner {{if eq .Kind "ok"}}banner-ok{{else}}banner-error{{end}}" role="{{if eq .Kind "ok"}}status{{else}}alert{{end}}">{{.Message}}</p>{{end}}{{end}}
+
+{{define "pager"}}{{if or .FirstLink .NextLink}}<nav class="pager" aria-label="Pages">
+{{- if .FirstLink}}<a href="{{.FirstLink}}">First page</a>{{end}}
+{{- if .NextLink}}<a href="{{.NextLink}}">Next page</a>{{end}}
+</nav>{{end}}{{end}}
+
+{{define "empty"}}<p class="empty">{{.}}</p>{{end}}

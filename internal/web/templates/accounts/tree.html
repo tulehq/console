@@ -1,0 +1,53 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><h1>Organization</h1></header>
+{{if $d.NoOrg}}
+<div class="panel">
+  <p>There is no organization yet. Create one to make the configured management account its first member.</p>
+  <form method="post" action="/accounts/organization">{{template "csrf" .}}<button type="submit" class="primary">Create organization</button></form>
+</div>
+{{else}}
+<dl class="facts">
+  <dt>ID</dt><dd><code>{{$d.ID}}</code></dd>
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>Feature set</dt><dd>{{$d.FeatureSet}}</dd>
+  <dt>Management account</dt><dd><code>{{$d.MasterID}}</code> {{$d.MasterEmail}}</dd>
+</dl>
+<h2>Tree</h2>
+<ul class="tree">{{range $d.Roots}}{{template "node" .}}{{end}}</ul>
+{{if $d.Truncated}}<p class="muted">The tree stops at its first 3000 entries.</p>{{end}}
+
+<div class="split">
+  <details class="panel">
+    <summary>Create an account</summary>
+    <form method="post" action="/accounts/accounts" class="stack">
+      {{template "csrf" .}}
+      <label>Name <input name="name" required></label>
+      <label>Email <input name="email" type="email" required spellcheck="false"></label>
+      <p class="hint">The account joins the root.</p>
+      <button type="submit" class="primary">Create account</button>
+    </form>
+  </details>
+  <details class="panel">
+    <summary>Create an organizational unit</summary>
+    <form method="post" action="/accounts/ous" class="stack">
+      {{template "csrf" .}}
+      <label>Parent <select name="parentId" required>{{range $d.Parents}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <label>Name <input name="name" required></label>
+      <button type="submit" class="primary">Create unit</button>
+    </form>
+  </details>
+</div>
+{{end}}
+{{end}}
+
+{{define "node"}}
+<li class="node node-{{.Kind}}">
+  <span class="kind">{{if eq .Kind "root"}}Root{{else if eq .Kind "ou"}}Unit{{else}}Account{{end}}</span>
+  {{if .Link}}<a href="{{.Link}}">{{.Name}}</a>{{else}}<strong>{{.Name}}</strong>{{end}}
+  <code class="muted">{{.ID}}</code>
+  {{with .Email}}<span class="muted">{{.}}</span>{{end}}
+  {{with .State}}<span class="tag">{{.}}</span>{{end}}
+  {{if .Children}}<ul>{{range .Children}}{{template "node" .}}{{end}}</ul>{{end}}
+</li>
+{{end}}

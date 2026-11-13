@@ -1,0 +1,16 @@
+{{define "content"}}
+<div class="signin">
+  <h1>Sign in to the Tule console</h1>
+  <p class="lede">Use an access key the services accept: the root key they are configured with, or a key identity issued.</p>
+  {{with .Data.Error}}<p class="banner banner-error" role="alert">{{.}}</p>{{end}}
+  <form method="post" action="/signin" class="stack">
+    <input type="hidden" name="_csrf" value="{{.Data.Token}}">
+    {{with .Data.Next}}<input type="hidden" name="next" value="{{.}}">{{end}}
+    <label>Access key ID <input name="accessKeyId" autocomplete="username" spellcheck="false" required autofocus></label>
+    <label>Secret access key <input name="secretAccessKey" type="password" autocomplete="current-password" spellcheck="false" required></label>
+    <label>Session token <span class="hint">only for a role session</span><textarea name="sessionToken" rows="2" spellcheck="false"></textarea></label>
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+  <p class="hint">The key stays on the console's server for this session only and is never sent back to the browser.</p>
+</div>
+{{end}}

@@ -1,0 +1,49 @@
+{{define "content"}}
+{{$f := .Data.Filters}}
+<header class="page-head">
+  <h1>Messages</h1>
+  <div class="actions">
+    <a class="button" href="/mail/failures">Rendering failures</a>
+    <form method="post" action="/mail/reset" class="inline" data-confirm="Delete every message and rendering failure?">{{template "csrf" .}}<button type="submit" class="danger">Delete all</button></form>
+  </div>
+</header>
+<form method="get" action="/mail" class="filters" role="search">
+  <label class="wide">Search <input type="search" name="q" value="{{$f.Q}}" placeholder="words in the subject or text" data-search
+    hx-get="/mail" hx-include="closest form" hx-trigger="input changed delay:300ms, search" hx-target="#results" hx-push-url="true"></label>
+  <details{{if $f.Active}} open{{end}}>
+    <summary>Filters</summary>
+    <div class="filter-grid">
+      <label>From <input name="from" value="{{$f.From}}" spellcheck="false"></label>
+      <label>To, Cc or Bcc <input name="to" value="{{$f.To}}" spellcheck="false"></label>
+      <label>Subject contains <input name="subject" value="{{$f.Subject}}"></label>
+      <label>Since (UTC) <input type="datetime-local" name="since" value="{{$f.Since}}"></label>
+      <label>Until (UTC) <input type="datetime-local" name="until" value="{{$f.Until}}"></label>
+      <label>Configuration set <input name="configurationSet" value="{{$f.ConfigurationSet}}" spellcheck="false"></label>
+      <label>Tags <input name="tag" value="{{$f.Tag}}" placeholder="name:value, name:value" spellcheck="false"></label>
+      <label>Message ID <input name="messageId" value="{{$f.MessageID}}" spellcheck="false"></label>
+    </div>
+  </details>
+  <div class="row"><button type="submit">Apply</button> <a href="/mail">Clear</a></div>
+</form>
+<div id="results" aria-live="polite">{{template "results" .}}</div>
+{{end}}
+
+{{define "results"}}
+{{- if .Data.Rows}}
+<table class="grid">
+  <thead><tr><th scope="col">Received</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Subject</th><th scope="col" class="num">Size</th></tr></thead>
+  <tbody>
+  {{- range .Data.Rows}}
+  <tr>
+    <td class="num nowrap">{{when .At}}</td>
+    <td>{{.From}}</td>
+    <td>{{join .To ", "}}{{if .Cc}} <span class="muted">cc {{join .Cc ", "}}</span>{{end}}</td>
+    <td><a href="{{.Link}}">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</a>{{if .AttachmentCount}} <span class="tag">{{.AttachmentCount}} attached</span>{{end}}{{range .Tags}} <span class="tag">{{.Name}}:{{.Value}}</span>{{end}}</td>
+    <td class="num">{{bytes .Size}}</td>
+  </tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" .Data}}
+{{- else}}{{template "empty" "No message matches. Mail your code sends through the SES API lands here."}}{{end}}
+{{end}}

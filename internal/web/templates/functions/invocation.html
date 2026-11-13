@@ -1,0 +1,16 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/lambda/invocations">Invocations</a></nav><h1 class="break">{{$d.RequestID}}</h1></div></header>
+<dl class="facts">
+  <dt>Function</dt><dd><a href="{{$d.FunctionLink}}">{{$d.Function}}</a></dd>
+  <dt>Time</dt><dd>{{if $d.At.IsZero}}{{$d.Time}}{{else}}{{when $d.At}}{{end}}</dd>
+  <dt>Source</dt><dd>{{$d.Source}}</dd>
+  <dt>Status</dt><dd><span class="tag {{if ne $d.Status "succeeded"}}tag-warn{{end}}">{{$d.Status}}</span></dd>
+  <dt>Duration</dt><dd>{{$d.Duration}}</dd>
+  {{if gt $d.Attempts 1}}<dt>Attempts</dt><dd>{{$d.Attempts}}</dd>{{end}}
+  {{if or $d.ErrorType $d.ErrorMessage}}<dt>Error</dt><dd>{{$d.ErrorType}} {{$d.ErrorMessage}}</dd>{{end}}
+</dl>
+<h2>Payload</h2>{{if $d.Payload}}<pre class="body">{{$d.Payload}}</pre>{{else}}{{template "empty" "No payload."}}{{end}}
+<h2>Result</h2>{{if $d.Result}}<pre class="body">{{$d.Result}}</pre>{{else}}{{template "empty" "No result."}}{{end}}
+<h2>Log</h2>{{if $d.Log}}<pre class="body small">{{$d.Log}}</pre>{{else}}{{template "empty" "No log."}}{{end}}
+{{end}}

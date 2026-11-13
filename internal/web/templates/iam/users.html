@@ -1,0 +1,28 @@
+{{define "content"}}
+<header class="page-head">
+  <h1>Users</h1>
+  <form method="post" action="/iam/users" class="inline">
+    {{template "csrf" .}}
+    <label class="sr-only" for="new-user">User name</label>
+    <input id="new-user" name="name" placeholder="user name" required spellcheck="false">
+    <label class="sr-only" for="new-path">Path</label>
+    <input id="new-path" name="path" placeholder="/" spellcheck="false" class="short">
+    <button type="submit">Create user</button>
+  </form>
+</header>
+{{if .Data.Users}}
+<table class="grid">
+  <thead><tr><th scope="col">User</th><th scope="col">Created</th><th scope="col">Access keys</th></tr></thead>
+  <tbody>
+  {{- range .Data.Users}}
+  <tr>
+    <td><a href="{{.Link}}">{{.Name}}</a><br><code class="muted">{{.ARN}}</code></td>
+    <td class="num">{{when .Created}}</td>
+    <td>{{if .Keys}}<ul class="plain">{{range .Keys}}<li><code>{{.ID}}</code> <span class="tag {{if ne .Status "Active"}}tag-warn{{end}}">{{.Status}}</span> <span class="muted">{{if .LastUsed.IsZero}}never used{{else}}last used {{when .LastUsed}}{{end}}</span></li>{{end}}</ul>{{else}}<span class="muted">none</span>{{end}}</td>
+  </tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" .Data}}
+{{else}}{{template "empty" "No users yet. Create one, then give it an access key."}}{{end}}
+{{end}}

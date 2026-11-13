@@ -1,0 +1,7 @@
+{{define "content"}}
+<header class="page-head"><h1>{{.Title}}</h1></header>
+<div class="failure" role="alert">
+  {{- with .Data.Code}}<p><strong>The service answered {{.}}.</strong></p>{{end}}
+  <p>{{.Data.Message}}</p>
+</div>
+{{end}}

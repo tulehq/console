@@ -1,0 +1,27 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div>
+    <nav class="crumbs" aria-label="Location"><a href="{{$d.Parent}}">{{$d.Bucket}}/{{$d.Prefix}}</a></nav>
+    <h1 class="break">{{$d.Key}}</h1>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{$d.Download}}">Download</a>
+    <form method="post" action="/s3/objects/delete" class="inline" data-confirm="Delete {{$d.Key}}?">
+      {{template "csrf" .}}<input type="hidden" name="bucket" value="{{$d.Bucket}}"><input type="hidden" name="prefix" value="{{$d.Prefix}}"><input type="hidden" name="key" value="{{$d.Key}}">
+      <button type="submit" class="danger">Delete</button>
+    </form>
+  </div>
+</header>
+<dl class="facts">
+  <dt>Size</dt><dd>{{bytes $d.Size}} ({{$d.Size}} bytes)</dd>
+  <dt>Type</dt><dd><code>{{$d.ContentType}}</code></dd>
+  <dt>ETag</dt><dd><code>{{$d.ETag}}</code></dd>
+  <dt>Last modified</dt><dd>{{when $d.Modified}}</dd>
+</dl>
+<h2>Headers</h2>
+<table class="grid kv"><tbody>{{range $d.Headers}}<tr><th scope="row">{{.Name}}</th><td><code>{{.Value}}</code></td></tr>{{end}}</tbody></table>
+<h2>Metadata</h2>
+{{if $d.Metadata}}<table class="grid kv"><tbody>{{range $d.Metadata}}<tr><th scope="row">{{.Name}}</th><td><code>{{.Value}}</code></td></tr>{{end}}</tbody></table>
+{{else}}{{template "empty" "No user metadata."}}{{end}}
+{{end}}

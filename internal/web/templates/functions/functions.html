@@ -1,0 +1,18 @@
+{{define "content"}}
+<header class="page-head">
+  <h1>Functions</h1>
+  <div class="actions"><a class="button" href="/lambda/invocations">Invocations</a> <a class="button" href="/lambda/mappings">Event source mappings</a></div>
+</header>
+{{if .Data.Functions}}
+<table class="grid">
+  <thead><tr><th scope="col">Name</th><th scope="col">State</th><th scope="col">Package</th><th scope="col" class="num">Memory</th><th scope="col" class="num">Timeout</th><th scope="col">Last modified</th></tr></thead>
+  <tbody>
+  {{- range .Data.Functions}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a>{{with .Description}}<br><span class="muted">{{.}}</span>{{end}}</td>
+  <td>{{template "fnstate" .}}</td><td>{{.PackageType}}</td><td class="num">{{.Memory}} MB</td><td class="num">{{.Timeout}} s</td><td class="num">{{.Modified}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" .Data}}
+{{else}}{{template "empty" "No functions yet. Create one with the Lambda API from an image."}}{{end}}
+{{end}}

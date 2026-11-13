@@ -1,0 +1,21 @@
+{{define "content"}}
+<header class="page-head">
+  <h1>Buckets</h1>
+  <form method="post" action="/s3/buckets" class="inline">
+    {{template "csrf" .}}
+    <label class="sr-only" for="new-bucket">Bucket name</label>
+    <input id="new-bucket" name="bucket" placeholder="new-bucket-name" required spellcheck="false">
+    <button type="submit">Create bucket</button>
+  </form>
+</header>
+{{if .Data.Buckets}}
+<table class="grid">
+  <thead><tr><th scope="col">Name</th><th scope="col">Created</th></tr></thead>
+  <tbody>
+  {{- range .Data.Buckets}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a></td><td class="num">{{when .Created}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{else}}{{template "empty" "No buckets yet. Create one to upload objects into it."}}{{end}}
+{{end}}

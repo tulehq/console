@@ -1,0 +1,27 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/lambda">Functions</a></nav><h1>Invocations</h1></div></header>
+<form method="get" action="/lambda/invocations" class="filters" hx-get="/lambda/invocations" hx-trigger="change, submit" hx-target="#results" hx-push-url="true">
+  <div class="filter-grid">
+    <label>Function <input name="function" value="{{$d.Function}}" spellcheck="false"></label>
+    <label>Status <select name="status">
+      <option value=""{{if eq $d.Status ""}} selected{{end}}>Any</option>
+      <option value="succeeded"{{if eq $d.Status "succeeded"}} selected{{end}}>Succeeded</option>
+      <option value="failed"{{if eq $d.Status "failed"}} selected{{end}}>Failed</option>
+      <option value="timedOut"{{if eq $d.Status "timedOut"}} selected{{end}}>Timed out</option>
+    </select></label>
+    <label>Source <select name="source">
+      <option value=""{{if eq $d.Source ""}} selected{{end}}>Any</option>
+      <option value="invoke"{{if eq $d.Source "invoke"}} selected{{end}}>Invoke</option>
+      <option value="async"{{if eq $d.Source "async"}} selected{{end}}>Asynchronous</option>
+      <option value="eventSourceMapping"{{if eq $d.Source "eventSourceMapping"}} selected{{end}}>Event source mapping</option>
+    </select></label>
+    <label>Since (UTC) <input type="datetime-local" name="since" value="{{$d.Since}}"></label>
+    <label>Until (UTC) <input type="datetime-local" name="until" value="{{$d.Until}}"></label>
+  </div>
+  <div class="row"><button type="submit">Apply</button> <a href="/lambda/invocations">Clear</a></div>
+</form>
+<div id="results" aria-live="polite">{{template "results" .}}</div>
+{{end}}
+
+{{define "results"}}{{template "invtable" .Data.Rows}}{{template "pager" .Data}}{{end}}

@@ -1,0 +1,46 @@
+{{define "content"}}
+{{$d := .Data}}
+<div hx-history="false">
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/lambda">Functions</a></nav><h1>{{$d.Name}}</h1></div></header>
+<dl class="facts">
+  <dt>State</dt><dd>{{template "fnstate" $d.Function}}{{with $d.StateReason}} <span class="muted">{{.}}</span>{{end}}{{with $d.UpdateReason}} <span class="muted">{{.}}</span>{{end}}</dd>
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>Image</dt><dd><code class="break">{{$d.ImageURI}}</code></dd>
+  <dt>Memory, timeout</dt><dd>{{$d.Memory}} MB, {{$d.Timeout}} s</dd>
+  <dt>Architecture</dt><dd>{{$d.Architecture}}</dd>
+  {{with $d.Role}}<dt>Role</dt><dd><code class="break">{{.}}</code></dd>{{end}}
+  <dt>Last modified</dt><dd>{{$d.Modified}}</dd>
+</dl>
+
+<h2>Invoke</h2>
+<form method="post" action="/lambda/function/invoke" hx-post="/lambda/function/invoke" hx-target="#result" class="stack">
+  {{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Name}}">
+  <label>Payload, JSON <textarea name="payload" rows="5" spellcheck="false" class="mono">{{$d.Payload}}</textarea></label>
+  <button type="submit" class="primary">Invoke</button>
+</form>
+<div id="result" aria-live="polite">{{template "result" .}}</div>
+
+<h2>Recent invocations</h2>
+{{if $d.HistoryErr}}<p class="banner banner-warn">The invocation history could not be read: {{$d.HistoryErr}}</p>
+{{else}}{{template "invtable" $d.Invocations}}<p><a href="{{$d.HistoryLink}}">All invocations of {{$d.Name}}</a></p>{{end}}
+
+<h2>Event source mappings</h2>
+{{template "maptable" (dict "Mappings" $d.Mappings "CSRF" .CSRF "Function" $d.Name)}}
+
+{{with $d.Environment}}
+<details class="panel"><summary>Environment ({{len .}})</summary>
+<table class="grid kv"><tbody>{{range .}}<tr><th scope="row"><code>{{.Name}}</code></th><td class="break"><code>{{.Value}}</code></td></tr>{{end}}</tbody></table></details>
+{{end}}
+</div>
+{{end}}
+
+{{define "result"}}
+{{- with .Data.Result}}
+<div class="result">
+  {{- if .Error}}<p class="banner banner-error" role="alert">{{.Error}}</p>{{end}}
+  {{- if .Status}}<p class="muted">Status {{.Status}}</p>{{end}}
+  {{- if .Payload}}<h3>Result</h3><pre class="body">{{.Payload}}</pre>{{end}}
+  {{- if .Log}}<h3>Log tail</h3><pre class="body small">{{.Log}}</pre>{{end}}
+</div>
+{{- end}}
+{{end}}

@@ -1,0 +1,38 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div><nav class="crumbs" aria-label="Location"><a href="/iam">Users</a></nav><h1>{{$d.Name}}</h1></div>
+  <div class="actions">
+    <form method="post" action="/iam/keys" class="inline">{{template "csrf" .}}<input type="hidden" name="user" value="{{$d.Name}}"><button type="submit" class="primary">Create access key</button></form>
+    <form method="post" action="/iam/users/delete" class="inline" data-confirm="Delete user {{$d.Name}}? Delete its keys first.">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Name}}"><button type="submit" class="danger">Delete user</button></form>
+  </div>
+</header>
+<dl class="facts">
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>User ID</dt><dd><code>{{$d.ID}}</code></dd>
+  <dt>Path</dt><dd><code>{{$d.Path}}</code></dd>
+  <dt>Created</dt><dd>{{when $d.Created}}</dd>
+</dl>
+<h2>Access keys</h2>
+{{if $d.Keys}}
+<table class="grid">
+  <thead><tr><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+  <tbody>
+  {{- range $d.Keys}}
+  <tr>
+    <td><code>{{.ID}}</code></td>
+    <td><span class="tag {{if ne .Status "Active"}}tag-warn{{end}}">{{.Status}}</span></td>
+    <td class="num">{{when .Created}}</td>
+    <td>{{if .LastUsed.IsZero}}<span class="muted">never</span>{{else}}{{when .LastUsed}} <span class="muted">{{.LastService}} {{.LastRegion}}</span>{{end}}</td>
+    <td class="actions">
+      <form method="post" action="/iam/keys/status" class="inline">{{template "csrf" $}}<input type="hidden" name="user" value="{{$d.Name}}"><input type="hidden" name="id" value="{{.ID}}">
+        {{if eq .Status "Active"}}<input type="hidden" name="status" value="Inactive"><button type="submit" class="quiet">Deactivate</button>{{else}}<input type="hidden" name="status" value="Active"><button type="submit" class="quiet">Activate</button>{{end}}</form>
+      <form method="post" action="/iam/keys/delete" class="inline" data-confirm="Delete key {{.ID}}?">{{template "csrf" $}}<input type="hidden" name="user" value="{{$d.Name}}"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="quiet danger">Delete</button></form>
+    </td>
+  </tr>
+  {{- end}}
+  </tbody>
+</table>
+{{else}}{{template "empty" "No access keys. A user has at most two."}}{{end}}
+{{with $d.Tags}}<h2>Tags</h2><table class="grid kv"><tbody>{{range .}}<tr><th scope="row">{{.Key}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table>{{end}}
+{{end}}

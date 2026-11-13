@@ -1,0 +1,50 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"historyCacheSize":0,"refreshOnHistoryMiss":true,"selfRequestsOnly":true}'>
+<title>{{.Title}} | Tule console</title>
+<link rel="stylesheet" href="/static/console.css?v={{buildId}}">
+<script src="/static/htmx.min.js?v={{buildId}}" defer></script>
+<script src="/static/console.js?v={{buildId}}" defer></script>
+</head>
+{{- if .SignedIn}}
+<body hx-headers='{"X-CSRF-Token": "{{.CSRF}}"}'>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <nav class="rail" aria-label="Services">
+    <a class="brand" href="/"{{if eq .Section ""}} aria-current="page"{{end}}>Tule console</a>
+    <ul>
+      {{- range .Nav}}
+      <li><a href="{{.Path}}"{{if .Active}} aria-current="page"{{end}}>{{template "dot" .}}<span>{{.Title}}</span></a></li>
+      {{- end}}
+    </ul>
+  </nav>
+  <div class="column">
+    <header class="topbar">
+      <p class="who">
+        {{- if .Principal.ARN}}Signed in as <code>{{.Principal.ARN}}</code>
+        {{- else if .Principal.KeyHint}}Signed in with the key ending <code>{{.Principal.KeyHint}}</code>
+        {{- else}}Signed in{{end}}</p>
+      <form method="post" action="/signout">{{template "csrf" .}}<button class="quiet" type="submit">Sign out</button></form>
+    </header>
+    <main id="main" tabindex="-1">
+      {{- template "flash" .}}
+      {{- with .Status}}{{if ne .State "ready"}}
+      <p class="banner banner-warn" role="status">{{.Title}} is {{.State}}{{with .Detail}}: {{.}}{{end}}. Pages of this section may fail until it is ready.</p>
+      {{- end}}{{end}}
+      {{block "content" .}}{{end}}
+    </main>
+  </div>
+</div>
+</body>
+{{- else}}
+<body class="bare">
+<main id="main" class="bare-main">
+{{block "content" .}}{{end}}
+</main>
+</body>
+{{- end}}
+</html>
+{{end}}

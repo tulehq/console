@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/mail">Messages</a></nav><h1>Rendering failures</h1></div></header>
+<p class="muted">Templated messages SES accepted and then dropped because the template did not render.</p>
+<form method="get" action="/mail/failures" class="filters">
+  <div class="filter-grid">
+    <label>Template <input name="template" value="{{$d.Template}}" spellcheck="false"></label>
+    <label>Message ID <input name="messageId" value="{{$d.MessageID}}" spellcheck="false"></label>
+    <label>Since (UTC) <input type="datetime-local" name="since" value="{{$d.Since}}"></label>
+    <label>Until (UTC) <input type="datetime-local" name="until" value="{{$d.Until}}"></label>
+  </div>
+  <div class="row"><button type="submit">Apply</button> <a href="/mail/failures">Clear</a></div>
+</form>
+{{if $d.Items}}
+<table class="grid">
+  <thead><tr><th scope="col">Time</th><th scope="col">Template</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Error</th></tr></thead>
+  <tbody>
+  {{- range $d.Items}}
+  <tr><td class="num nowrap">{{.Time}}</td><td>{{if .Template}}{{.Template}}{{else}}<span class="muted">inline</span>{{end}} <span class="muted">{{.Source}}</span></td><td>{{.From}}</td><td>{{join .To ", "}}</td><td>{{.Error}}<br><code class="muted">{{.MessageID}}</code></td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" $d}}
+{{else}}{{template "empty" "No rendering failures."}}{{end}}
+{{end}}

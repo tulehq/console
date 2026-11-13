@@ -1,0 +1,66 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div><nav class="crumbs" aria-label="Location"><a href="/sqs">Queues</a></nav><h1>{{$d.Queue.Name}}</h1></div>
+  <div class="actions">
+    <form method="post" action="/sqs/queue/purge" class="inline" data-confirm="Delete every message in {{$d.Queue.Name}}?">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Queue.Name}}"><button type="submit">Purge</button></form>
+    <form method="post" action="/sqs/queue/delete" class="inline" data-confirm="Delete queue {{$d.Queue.Name}} and its messages?">{{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Queue.Name}}"><button type="submit" class="danger">Delete queue</button></form>
+  </div>
+</header>
+<dl class="facts">
+  <dt>URL</dt><dd><code class="break">{{$d.Queue.URL}}</code></dd>
+  <dt>ARN</dt><dd><code class="break">{{$d.Queue.ARN}}</code></dd>
+  <dt>Messages</dt><dd>{{$d.Queue.Counts.Visible}} visible, {{$d.Queue.Counts.InFlight}} in flight, {{$d.Queue.Counts.Delayed}} delayed</dd>
+</dl>
+
+<details class="panel" open>
+  <summary>Send a message</summary>
+  <form method="post" action="/sqs/queue/send" class="stack">
+    {{template "csrf" .}}<input type="hidden" name="name" value="{{$d.Queue.Name}}">
+    <label>Body <textarea name="body" rows="4" spellcheck="false" required></textarea></label>
+    <label>Attributes <span class="hint">one Name=Value per line, sent as String</span><textarea name="attributes" rows="2" spellcheck="false"></textarea></label>
+    {{if $d.FIFO}}
+    <div class="split">
+      <label>Group ID <input name="groupId" required spellcheck="false"></label>
+      <label>Deduplication ID <input name="dedupId" spellcheck="false" placeholder="unless content-based"></label>
+    </div>
+    {{else}}
+    <label>Delay, in seconds <input name="delay" type="number" min="0" max="900" class="short"></label>
+    {{end}}
+    <button type="submit" class="primary">Send message</button>
+  </form>
+</details>
+
+<h2>Messages</h2>
+<form method="get" action="/sqs/queue" class="toolbar">
+  <input type="hidden" name="name" value="{{$d.Queue.Name}}">
+  <label>State <select name="state">
+    <option value=""{{if eq $d.State ""}} selected{{end}}>Any</option>
+    <option value="visible"{{if eq $d.State "visible"}} selected{{end}}>Visible</option>
+    <option value="inFlight"{{if eq $d.State "inFlight"}} selected{{end}}>In flight</option>
+    <option value="delayed"{{if eq $d.State "delayed"}} selected{{end}}>Delayed</option>
+  </select></label>
+  <label>Group <input name="group" value="{{$d.Group}}" spellcheck="false"></label>
+  <button type="submit">Filter</button>
+</form>
+{{if $d.Messages}}
+<table class="grid">
+  <thead><tr><th scope="col">Sent</th><th scope="col">State</th><th scope="col">Body</th><th scope="col">Attributes</th></tr></thead>
+  <tbody>
+  {{- range $d.Messages}}
+  <tr>
+    <td class="num nowrap">{{when .SentAt}}<br><code class="muted">{{.ID}}</code></td>
+    <td><span class="tag">{{.State}}</span><br><span class="muted">received {{.ReceiveCount}}×{{if not .VisibleAt.IsZero}}, visible {{when .VisibleAt}}{{end}}</span>{{with .Group}}<br>group <code>{{.}}</code>{{end}}{{with .DeduplicationID}}<br>dedup <code>{{.}}</code>{{end}}</td>
+    <td><pre class="body small">{{.Body}}</pre></td>
+    <td>{{range .Attributes}}<div><code>{{.Name}}</code> {{.Value}}</div>{{end}}
+      <details><summary class="muted">System</summary>{{range .System}}<div><code>{{.Name}}</code> {{.Value}}</div>{{end}}</details></td>
+  </tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" $d}}
+{{else}}{{template "empty" "No messages in this state."}}{{end}}
+
+<h2>Attributes</h2>
+<table class="grid kv"><tbody>{{range $d.Attributes}}<tr><th scope="row">{{.Name}}</th><td class="break"><code>{{.Value}}</code></td></tr>{{end}}</tbody></table>
+{{end}}

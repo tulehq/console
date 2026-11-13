@@ -1,0 +1,4 @@
+{{define "content"}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/lambda">Functions</a></nav><h1>Event source mappings</h1></div></header>
+{{template "maptable" (dict "Mappings" .Data.Mappings "CSRF" .CSRF "Function" "")}}
+{{end}}

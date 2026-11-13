@@ -1,0 +1,23 @@
+{{define "content"}}
+<header class="page-head"><h1>Queues</h1></header>
+{{if .Data.Queues}}
+<table class="grid">
+  <thead><tr><th scope="col">Name</th><th scope="col" class="num">Visible</th><th scope="col" class="num">In flight</th><th scope="col" class="num">Delayed</th><th scope="col">Type</th></tr></thead>
+  <tbody>
+  {{- range .Data.Queues}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a></td><td class="num">{{.Counts.Visible}}</td><td class="num">{{.Counts.InFlight}}</td><td class="num">{{.Counts.Delayed}}</td><td>{{if .FIFO}}FIFO{{else}}Standard{{end}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{else}}{{template "empty" "No queues yet. Create one below."}}{{end}}
+<details class="panel">
+  <summary>Create a queue</summary>
+  <form method="post" action="/sqs/queues" class="stack">
+    {{template "csrf" .}}
+    <label>Name <input name="name" required spellcheck="false"></label>
+    <label class="check"><input type="checkbox" name="fifo"> FIFO queue <span class="hint">.fifo is added to the name</span></label>
+    <label class="check"><input type="checkbox" name="contentDedup"> Content-based deduplication <span class="hint">FIFO only</span></label>
+    <button type="submit" class="primary">Create queue</button>
+  </form>
+</details>
+{{end}}

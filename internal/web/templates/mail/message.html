@@ -1,0 +1,42 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div><nav class="crumbs" aria-label="Location"><a href="/mail">Messages</a></nav><h1 class="break">{{if $d.Subject}}{{$d.Subject}}{{else}}(no subject){{end}}</h1></div>
+  <div class="actions">
+    <a class="button" href="{{$d.RawLink}}">Raw MIME</a>
+    <a class="button" href="{{$d.SaveLink}}">Save .eml</a>
+    <form method="post" action="/mail/message/delete" class="inline" data-confirm="Delete this message?">{{template "csrf" .}}<input type="hidden" name="id" value="{{$d.ID}}"><button type="submit" class="danger">Delete</button></form>
+  </div>
+</header>
+<dl class="facts">
+  <dt>From</dt><dd>{{$d.From}}</dd>
+  <dt>To</dt><dd>{{join $d.To ", "}}</dd>
+  {{if $d.Cc}}<dt>Cc</dt><dd>{{join $d.Cc ", "}}</dd>{{end}}
+  {{if $d.Bcc}}<dt>Bcc</dt><dd>{{join $d.Bcc ", "}}</dd>{{end}}
+  <dt>Received</dt><dd>{{when $d.At}}</dd>
+  <dt>Message ID</dt><dd><code class="break">{{$d.ID}}</code></dd>
+  {{with $d.ConfigurationSet}}<dt>Configuration set</dt><dd>{{.}}</dd>{{end}}
+  {{if $d.Tags}}<dt>Tags</dt><dd>{{range $d.Tags}}<span class="tag">{{.Name}}:{{.Value}}</span> {{end}}</dd>{{end}}
+  <dt>Size</dt><dd>{{bytes $d.Size}}</dd>
+</dl>
+
+{{if $d.Preview}}
+<h2>HTML</h2>
+<iframe class="preview" title="HTML part of the message, without scripts, styles or images" sandbox="" referrerpolicy="no-referrer" src="{{$d.Preview}}"></iframe>
+<p class="hint">Shown without scripts, styles, images or any other fetch.</p>
+{{end}}
+
+<h2>Text</h2>
+{{if $d.Text}}<pre class="body">{{$d.Text}}</pre>{{else}}{{template "empty" "The message has no text part."}}{{end}}
+
+<h2>Attachments</h2>
+{{if $d.Attachments}}
+<table class="grid"><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col" class="num">Size</th></tr></thead>
+<tbody>{{range $d.Attachments}}<tr><td><a href="{{.Link}}">{{if .Name}}{{.Name}}{{else}}(unnamed){{end}}</a></td><td><code>{{.ContentType}}</code></td><td class="num">{{bytes .Size}}</td></tr>{{end}}</tbody></table>
+{{else}}{{template "empty" "No attachments."}}{{end}}
+
+<details class="panel">
+  <summary>Headers ({{len $d.Headers}})</summary>
+  <table class="grid kv"><tbody>{{range $d.Headers}}<tr><th scope="row">{{.Name}}</th><td class="break">{{.Value}}</td></tr>{{end}}</tbody></table>
+</details>
+{{end}}

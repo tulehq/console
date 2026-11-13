@@ -1,0 +1,54 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div>
+    <nav class="crumbs" aria-label="Location">{{range $i, $c := $d.Crumbs}}{{if $i}}<span aria-hidden="true">/</span>{{end}}<a href="{{$c.Link}}">{{$c.Name}}</a>{{end}}</nav>
+    <h1>{{if $d.Prefix}}{{$d.Prefix}}{{else}}{{$d.Bucket}}{{end}}</h1>
+  </div>
+  <form method="post" action="/s3/buckets/delete" class="inline" data-confirm="Delete bucket {{$d.Bucket}}? Only an empty bucket can be deleted.">
+    {{template "csrf" .}}<input type="hidden" name="bucket" value="{{$d.Bucket}}">
+    <button type="submit" class="danger">Delete bucket</button>
+  </form>
+</header>
+
+<form method="post" action="/s3/upload" enctype="multipart/form-data" class="toolbar">
+  {{template "csrf" .}}
+  <input type="hidden" name="bucket" value="{{$d.Bucket}}">
+  <input type="hidden" name="prefix" value="{{$d.Prefix}}">
+  <label>File <input type="file" name="file" required></label>
+  <label>Key <input name="key" placeholder="{{$d.Prefix}}(file name)" spellcheck="false"></label>
+  <label>Content type <input name="contentType" placeholder="from the file" spellcheck="false"></label>
+  <button type="submit">Upload</button>
+</form>
+
+{{if or $d.Folders $d.Objects}}
+<form method="post" action="/s3/objects/delete" data-confirm="Delete the selected objects?">
+  {{template "csrf" .}}
+  <input type="hidden" name="bucket" value="{{$d.Bucket}}">
+  <input type="hidden" name="prefix" value="{{$d.Prefix}}">
+  <table class="grid">
+    <thead><tr>
+      <th scope="col" class="check"><span class="sr-only">Select</span></th>
+      <th scope="col">Name</th><th scope="col" class="num">Size</th><th scope="col">Last modified</th><th scope="col">ETag</th><th scope="col"><span class="sr-only">Download</span></th>
+    </tr></thead>
+    <tbody>
+    {{- range $d.Folders}}
+    <tr class="folder"><td></td><td colspan="5"><a href="{{.Link}}">{{.Name}}</a></td></tr>
+    {{- end}}
+    {{- range $d.Objects}}
+    <tr>
+      <td class="check"><input type="checkbox" name="key" value="{{.Key}}" aria-label="Select {{.Name}}"></td>
+      <td><a href="{{.Link}}">{{.Name}}</a></td>
+      <td class="num">{{bytes .Size}}</td>
+      <td class="num">{{when .Modified}}</td>
+      <td><code>{{.ETag}}</code></td>
+      <td><a href="{{.Download}}">Download</a></td>
+    </tr>
+    {{- end}}
+    </tbody>
+  </table>
+  {{if $d.Objects}}<p><button type="submit" class="danger">Delete selected</button></p>{{end}}
+</form>
+{{template "pager" $d}}
+{{else}}{{template "empty" "Nothing here yet. Upload a file, or give a key with slashes to make folders."}}{{end}}
+{{end}}

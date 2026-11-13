@@ -1,0 +1,13 @@
+{{define "content"}}
+<header class="page-head"><h1>Overview</h1></header>
+<table class="grid">
+  <caption class="sr-only">Configured services</caption>
+  <thead><tr><th scope="col">Service</th><th scope="col">State</th><th scope="col">Detail</th></tr></thead>
+  <tbody>
+  {{- range .Nav}}
+  <tr><th scope="row"><a href="{{.Path}}">{{.Title}}</a></th><td>{{template "dot" .}} {{.State}}</td><td class="muted">{{.Detail}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{with .Principal.Account}}<p class="muted">Account <code>{{.}}</code></p>{{end}}
+{{end}}

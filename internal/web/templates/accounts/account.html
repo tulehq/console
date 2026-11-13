@@ -1,0 +1,15 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head"><div><nav class="crumbs" aria-label="Location"><a href="/accounts">Organization</a></nav><h1>{{$d.Name}}</h1></div></header>
+<dl class="facts">
+  <dt>ID</dt><dd><code>{{$d.ID}}</code></dd>
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>Email</dt><dd>{{$d.Email}}</dd>
+  <dt>State</dt><dd>{{$d.State}}</dd>
+  <dt>Joined</dt><dd>{{$d.Method}} {{when $d.Joined}}</dd>
+  <dt>Parent</dt><dd>{{range $d.Parents}}<code>{{.ID}}</code> ({{.Name}}) {{end}}</dd>
+</dl>
+<h2>Tags</h2>
+{{if $d.Tags}}<table class="grid kv"><tbody>{{range $d.Tags}}<tr><th scope="row">{{.Key}}</th><td>{{.Value}}</td></tr>{{end}}</tbody></table>
+{{else}}{{template "empty" "No tags."}}{{end}}
+{{end}}

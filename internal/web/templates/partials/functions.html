@@ -1,0 +1,33 @@
+{{/* Blocks the functions pages share. */}}
+{{define "fnstate"}}<span class="tag {{if ne .State "Active"}}tag-warn{{end}}">{{.State}}</span>{{if and .UpdateStatus (ne .UpdateStatus "Successful")}} <span class="tag tag-warn">update {{.UpdateStatus}}</span>{{end}}{{end}}
+
+{{define "invtable"}}
+{{- if .}}
+<table class="grid">
+  <thead><tr><th scope="col">Request ID</th><th scope="col">Time</th><th scope="col">Function</th><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Error</th></tr></thead>
+  <tbody>
+  {{- range .}}
+  <tr><td><a href="{{.Link}}"><code>{{.RequestID}}</code></a></td><td class="num nowrap">{{if .At.IsZero}}{{.Time}}{{else}}{{when .At}}{{end}}</td><td>{{.Function}}</td><td>{{.Source}}</td>
+  <td><span class="tag {{if ne .Status "succeeded"}}tag-warn{{end}}">{{.Status}}</span></td><td class="num">{{.Duration}}</td><td>{{.ErrorType}} {{.ErrorMessage}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{- else}}{{template "empty" "No invocations."}}{{end}}
+{{end}}
+
+{{define "maptable"}}
+{{- if .Mappings}}
+<table class="grid">
+  <thead><tr><th scope="col">Source</th><th scope="col">Function</th><th scope="col">State</th><th scope="col" class="num">Batch</th><th scope="col">Last result</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+  <tbody>
+  {{- range .Mappings}}
+  <tr><td><code class="break">{{.Source}}</code><br><code class="muted">{{.UUID}}</code></td><td><a href="{{.FunctionLink}}">{{.Function}}</a></td>
+  <td><span class="tag {{if not .Enabled}}tag-warn{{end}}">{{.State}}</span>{{with .Reason}}<br><span class="muted">{{.}}</span>{{end}}</td>
+  <td class="num">{{.BatchSize}}</td><td>{{.LastResult}}</td>
+  <td><form method="post" action="/lambda/mappings/state" class="inline"><input type="hidden" name="_csrf" value="{{$.CSRF}}"><input type="hidden" name="uuid" value="{{.UUID}}"><input type="hidden" name="function" value="{{$.Function}}">
+    {{if .Enabled}}<input type="hidden" name="enabled" value="false"><button type="submit" class="quiet">Disable</button>{{else}}<input type="hidden" name="enabled" value="true"><button type="submit" class="quiet">Enable</button>{{end}}</form></td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{- else}}{{template "empty" "No event source mappings."}}{{end}}
+{{end}}
