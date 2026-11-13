@@ -43,10 +43,15 @@ const noPrincipal = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Act
 // the rest of the page, rest, around it.
 func requireRefused(t *testing.T, res *consoletest.Response, id, code, doc, rest string) {
 	t.Helper()
-	if res.Status != http.StatusBadRequest && res.Status != http.StatusForbidden {
-		t.Fatalf("status %d, want 400 or 403: %s", res.Status, consoletest.Text(res.Doc))
+	switch res.Status {
+	case http.StatusBadRequest, http.StatusForbidden, http.StatusConflict:
+	default:
+		t.Fatalf("status %d, want 400, 403 or 409: %s", res.Status, consoletest.Text(res.Doc))
 	}
-	consoletest.RequireText(t, res, "The service answered "+code, rest)
+	if code != "" {
+		consoletest.RequireText(t, res, "The service answered "+code)
+	}
+	consoletest.RequireText(t, res, rest)
 	failure := consoletest.Find(res.Doc, consoletest.ByID(id+"-error"))
 	if failure == nil {
 		t.Fatalf("%s is not next to the form: %s", code, consoletest.Text(res.Doc))
@@ -112,7 +117,8 @@ func TestABucketPolicy(t *testing.T) {
 		t.Fatalf("stored %s, want %s", aws.ToString(got.Policy), doc)
 	}
 
-	res = b.PostForm("/s3/bucket/policy/delete", url.Values{"bucket": {bucket}})
+	res = b.PostForm("/s3/bucket/policy/delete",
+		consoletest.Hidden(page, consoletest.FormTo("/s3/bucket/policy/delete")))
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the policy of bucket "+bucket)
 	_, err = sdk.GetBucketPolicy(t.Context(), &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
 	requireCode(t, err, "NoSuchBucketPolicy", "the deleted policy")
@@ -171,7 +177,8 @@ func TestASecretPolicy(t *testing.T) {
 		t.Fatalf("stored %s, want %s", aws.ToString(got.ResourcePolicy), doc)
 	}
 
-	res = b.PostForm("/secrets/secret/policy/delete", url.Values{"id": {name}})
+	res = b.PostForm("/secrets/secret/policy/delete",
+		consoletest.Hidden(page, consoletest.FormTo("/secrets/secret/policy/delete")))
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the resource policy")
 	got, err = sdk.GetResourcePolicy(t.Context(),
 		&secretsmanager.GetResourcePolicyInput{SecretId: aws.String(name)})
@@ -218,7 +225,8 @@ func TestAQueuePolicy(t *testing.T) {
 		t.Fatalf("stored %s, want %s", p, doc)
 	}
 
-	res = b.PostForm("/sqs/queue/policy/delete", url.Values{"name": {name}})
+	res = b.PostForm("/sqs/queue/policy/delete",
+		consoletest.Hidden(page, consoletest.FormTo("/sqs/queue/policy/delete")))
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the policy of queue "+name)
 	if p := queuePolicy(t, sdk, q.QueueUrl); p != "" {
 		t.Fatalf("the policy is still there: %s", p)
@@ -242,15 +250,7 @@ func TestAFunctionPolicy(t *testing.T) {
 	b := rootBrowser(t)
 	arn := "arn:aws:lambda:" + region + ":000000000000:function:" + name
 	form := func(page *consoletest.Response, kv ...string) url.Values {
-		v := url.Values{"name": {name}, "arn": {arn}}
-		if n := consoletest.Find(page.Doc, consoletest.ByName("revision")); n != nil {
-			rev, _ := consoletest.Attr(n, "value")
-			v.Set("revision", rev)
-		}
-		for i := 0; i+1 < len(kv); i += 2 {
-			v.Set(kv[i], kv[i+1])
-		}
-		return v
+		return consoletest.Hidden(page, consoletest.FormTo("/lambda/function/policy"), kv...)
 	}
 
 	page := b.Get("/lambda/function?name=" + name)
@@ -312,11 +312,16 @@ func TestAnIdentitysPolicies(t *testing.T) {
 		v := url.Values{"identity": {identity}, "name": {name}, "document": {doc}}
 		if isNew {
 			v.Set("new", "true")
+		} else {
+			// An edit sends the version of the policy its page read.
+			page := b.Get("/mail/identity?name=" + identity)
+			v = consoletest.Hidden(page,
+				consoletest.FormHolding("policy-named-"+name+"-document"), "document", doc)
 		}
 		return b.PostForm("/mail/identity/policy", v)
 	}
 	res = post("bad", noPrincipal, true)
-	requireRefused(t, res, "policy-new", "BadRequestException", noPrincipal, "Verification")
+	requireRefused(t, res, "policy-add", "BadRequestException", noPrincipal, "Verification")
 
 	send := grant("Send", "ses:SendEmail", arn)
 	raw := grant("Raw", "ses:SendRawEmail", arn)
@@ -325,19 +330,20 @@ func TestAnIdentitysPolicies(t *testing.T) {
 			"Created policy "+name+" of "+identity)
 	}
 	res = post("partner", send, true)
-	requireRefused(t, res, "policy-new", "AlreadyExistsException", send, "Verification")
+	requireRefused(t, res, "policy-add", "AlreadyExistsException", send, "Verification")
 
 	// Each policy is edited on its own; a refusal shows next to its form.
 	res = post("partner", noPrincipal, false)
-	requireRefused(t, res, "policy-partner", "BadRequestException", noPrincipal, "Verification")
+	requireRefused(
+		t, res, "policy-named-partner", "BadRequestException", noPrincipal, "Verification",
+	)
 	page := b.Get(post("partner", raw, false).Location())
 	consoletest.RequireFlash(t, page, "ok", "Saved policy partner of "+identity)
-	requireDocument(t, page, "policy-partner", raw)
-	requireDocument(t, page, "policy-other", raw)
+	requireDocument(t, page, "policy-named-partner", raw)
+	requireDocument(t, page, "policy-named-other", raw)
 
-	res = b.PostForm("/mail/identity/policy/delete", url.Values{
-		"identity": {identity}, "name": {"other"},
-	})
+	res = b.PostForm("/mail/identity/policy/delete",
+		consoletest.Hidden(page, consoletest.FormHolding("policy-named-other-document")))
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted policy other of "+identity)
 	got, err := sdk.GetEmailIdentityPolicies(t.Context(),
 		&sesv2.GetEmailIdentityPoliciesInput{EmailIdentity: aws.String(identity)})
@@ -354,6 +360,12 @@ const pageReader = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Acti
 	`"sqs:GetQueueUrl","tule:Inspect","lambda:GetFunction","lambda:ListEventSourceMappings",` +
 	`"ses:GetEmailIdentity"],"Resource":"*"}]}`
 
+// policyReader allows reading each resource's policy, and none of the
+// actions that change one.
+const policyReader = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":[` +
+	`"s3:GetBucketPolicy","secretsmanager:GetResourcePolicy","sqs:GetQueueAttributes",` +
+	`"lambda:GetPolicy","ses:GetEmailIdentityPolicies"],"Resource":"*"}]}`
+
 // deniedSection is a resource's page, the action its policy is read with,
 // the form that saves the policy, the id of its section, and text of the
 // rest of the page.
@@ -365,6 +377,9 @@ type deniedSection struct {
 	id     string
 	rest   string
 	saveAs string
+	// creates is set for a form that creates a policy, which the console
+	// does not read first: the service refuses an existing name itself.
+	creates bool
 }
 
 // TestPolicySectionsShowTheirDenial signs in a user allowed each
@@ -397,8 +412,8 @@ func TestPolicySectionsShowTheirDenial(t *testing.T) {
 		},
 		{
 			page: "/mail/identity?name=" + identity, read: "ses:GetEmailIdentityPolicies",
-			rest: "Verification", save: "/mail/identity/policy", id: "policy-new",
-			saveAs: "ses:CreateEmailIdentityPolicy", form: url.Values{
+			rest: "Verification", save: "/mail/identity/policy", id: "policy-add",
+			saveAs: "ses:CreateEmailIdentityPolicy", creates: true, form: url.Values{
 				"identity": {identity}, "name": {"p"}, "new": {"true"},
 				// mailbox checks a document before the request is
 				// evaluated, so this one names the identity.
@@ -415,18 +430,58 @@ func TestPolicySectionsShowTheirDenial(t *testing.T) {
 			save: "/lambda/function/policy", id: "function-policy",
 			saveAs: "lambda:PutResourcePolicy", form: url.Values{
 				"name":     {name},
-				"arn":      {"arn:aws:lambda:" + region + ":000000000000:function:" + name},
 				"document": {doc},
 			},
 		})
 	}
+	requireReadDenied(t, b, sections)
+
+	// Allowed to read the policies, the principal sees each form, and a save
+	// is refused the action that changes the policy.
+	putUserPolicy(t, user, "policies", policyReader)
+	requireWriteDenied(t, b, sections)
+}
+
+// requireReadDenied checks each section of a user who may not read its
+// policy: the page with the refusal in the section's place, and a save
+// refused the read it makes first.
+func requireReadDenied(t *testing.T, b *consoletest.Browser, sections []deniedSection) {
+	t.Helper()
 	for _, s := range sections {
 		res := b.Get(s.page)
 		consoletest.RequireStatus(t, res, http.StatusOK)
 		consoletest.RequireText(t, res, s.rest, "could not be read")
 		requireDenial(t, res, s.read)
 
+		// A save reads the policy first, to keep a change made since the
+		// page was read, so it is refused that read; a create is refused
+		// itself.
 		res = b.PostForm(s.save, s.form)
+		requireRefused(t, res, s.id, "AccessDenied", s.form.Get("document"), s.rest)
+		if s.creates {
+			requireDenial(t, res, s.saveAs)
+			continue
+		}
+		requireDenial(t, res, s.read)
+		consoletest.RequireText(t, res, "whether there is one is unknown")
+	}
+}
+
+// requireWriteDenied checks each section of a user who may read its
+// policy but not change it: the form, and a save refused the change.
+func requireWriteDenied(t *testing.T, b *consoletest.Browser, sections []deniedSection) {
+	t.Helper()
+	for _, s := range sections {
+		page := b.Get(s.page)
+		consoletest.RequireStatus(t, page, http.StatusOK)
+		if strings.Contains(consoletest.Text(page.Doc), "could not be read") {
+			t.Fatalf("%s: the policy is still unread: %s", s.page, consoletest.Text(page.Doc))
+		}
+		form := consoletest.Hidden(page, consoletest.FormTo(s.save))
+		for k, v := range s.form {
+			form[k] = v
+		}
+		res := b.PostForm(s.save, form)
 		requireRefused(t, res, s.id, "AccessDenied", s.form.Get("document"), s.rest)
 		requireDenial(t, res, s.saveAs)
 	}
@@ -466,4 +521,171 @@ func resources(t *testing.T) (bucket, secret, queue, identity string) {
 		&sesv2.CreateEmailIdentityInput{EmailIdentity: aws.String(identity)})
 	requireNoErr(t, err, "create the identity")
 	return bucket, secret, queue, identity
+}
+
+// changedSince is a resource whose page is read, whose policy another
+// client then changes, and the save from that page: refused, the change
+// made since kept.
+type changedSince struct {
+	change func()
+	stored func() string
+	form   url.Values
+	page   string
+	save   string
+	id     string
+}
+
+// TestASaveKeepsAChangeMadeSinceThePageLoaded reads each resource's page,
+// changes its policy with the SDK, and saves from the page: each save is
+// refused next to its form with the typed document, and the policy is as
+// the SDK left it.
+func TestASaveKeepsAChangeMadeSinceThePageLoaded(t *testing.T) {
+	b := rootBrowser(t)
+	bucket, secret, queue, identity := resources(t)
+	cases := []changedSince{
+		bucketChangedSince(t, bucket), secretChangedSince(t, secret),
+		queueChangedSince(t, queue), identityChangedSince(t, identity),
+	}
+	if fn.skip == "" {
+		cases = append(cases, functionChangedSince(t))
+	}
+	for _, c := range cases {
+		page := b.Get(c.page)
+		c.change()
+		want := c.stored()
+		form := consoletest.Hidden(page, consoletest.FormHolding(c.id+"-document"))
+		form.Set("document", c.form.Get("document"))
+		res := b.PostForm(c.save, form)
+		consoletest.RequireStatus(t, res, http.StatusConflict)
+		requireRefused(t, res, c.id, "", c.form.Get("document"),
+			"The policy changed since the page was loaded")
+		if got := c.stored(); got != want {
+			t.Fatalf("%s: the change made since became %s", c.page, got)
+		}
+	}
+}
+
+func bucketChangedSince(t *testing.T, bucket string) changedSince {
+	t.Helper()
+	sdk := s3Client()
+	return changedSince{
+		page: "/s3/bucket?bucket=" + bucket, save: "/s3/bucket/policy", id: "bucket-policy",
+		form: url.Values{"document": {grant("Mine", "s3:GetObject", "arn:aws:s3:::"+bucket+"/*")}},
+		change: func() {
+			_, err := sdk.PutBucketPolicy(t.Context(), &s3.PutBucketPolicyInput{
+				Bucket: aws.String(bucket),
+				Policy: aws.String(grant("Theirs", "s3:PutObject", "arn:aws:s3:::"+bucket+"/*")),
+			})
+			requireNoErr(t, err, "put the bucket policy")
+		},
+		stored: func() string {
+			out, err := sdk.GetBucketPolicy(t.Context(),
+				&s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+			requireNoErr(t, err, "get the bucket policy")
+			return aws.ToString(out.Policy)
+		},
+	}
+}
+
+func secretChangedSince(t *testing.T, secret string) changedSince {
+	t.Helper()
+	sdk := awsclient.SecretsManager(endpoint("secret-store"), rootCreds)
+	return changedSince{
+		page: "/secrets/secret?id=" + secret, save: "/secrets/secret/policy", id: "secret-policy",
+		form: url.Values{"document": {grant("Mine", "secretsmanager:GetSecretValue", "*")}},
+		change: func() {
+			_, err := sdk.PutResourcePolicy(t.Context(), &secretsmanager.PutResourcePolicyInput{
+				SecretId:       aws.String(secret),
+				ResourcePolicy: aws.String(grant("Theirs", "secretsmanager:DescribeSecret", "*")),
+			})
+			requireNoErr(t, err, "put the secret's policy")
+		},
+		stored: func() string {
+			out, err := sdk.GetResourcePolicy(t.Context(),
+				&secretsmanager.GetResourcePolicyInput{SecretId: aws.String(secret)})
+			requireNoErr(t, err, "get the secret's policy")
+			return aws.ToString(out.ResourcePolicy)
+		},
+	}
+}
+
+// queueChangedSince is a queue that AddPermission gives a statement after
+// its page was read.
+func queueChangedSince(t *testing.T, queue string) changedSince {
+	t.Helper()
+	sdk := awsclient.SQS(endpoint("queues"), rootCreds)
+	q, err := sdk.GetQueueUrl(t.Context(), &sqs.GetQueueUrlInput{QueueName: aws.String(queue)})
+	requireNoErr(t, err, "the queue's URL")
+	return changedSince{
+		page: "/sqs/queue?name=" + queue, save: "/sqs/queue/policy", id: "queue-policy",
+		form: url.Values{"document": {grant("Mine", "sqs:SendMessage", "*")}},
+		change: func() {
+			_, err := sdk.AddPermission(t.Context(), &sqs.AddPermissionInput{
+				QueueUrl: q.QueueUrl, Label: aws.String("theirs"),
+				AWSAccountIds: []string{"000000000000"}, Actions: []string{"ReceiveMessage"},
+			})
+			requireNoErr(t, err, "add permission")
+		},
+		stored: func() string { return queuePolicy(t, sdk, q.QueueUrl) },
+	}
+}
+
+func identityChangedSince(t *testing.T, identity string) changedSince {
+	t.Helper()
+	sdk := awsclient.SESv2(endpoint("mailbox"), rootCreds)
+	arn := "arn:aws:ses:" + region + ":000000000000:identity/" + identity
+	_, err := sdk.CreateEmailIdentityPolicy(t.Context(), &sesv2.CreateEmailIdentityPolicyInput{
+		EmailIdentity: aws.String(identity), PolicyName: aws.String("partner"),
+		Policy: aws.String(grant("Send", "ses:SendEmail", arn)),
+	})
+	requireNoErr(t, err, "create the identity's policy")
+	return changedSince{
+		page: "/mail/identity?name=" + identity, save: "/mail/identity/policy",
+		id:   "policy-named-partner",
+		form: url.Values{"document": {grant("Mine", "ses:SendEmail", arn)}},
+		change: func() {
+			_, err := sdk.UpdateEmailIdentityPolicy(t.Context(),
+				&sesv2.UpdateEmailIdentityPolicyInput{
+					EmailIdentity: aws.String(identity), PolicyName: aws.String("partner"),
+					Policy: aws.String(grant("Theirs", "ses:SendRawEmail", arn)),
+				})
+			requireNoErr(t, err, "update the identity's policy")
+		},
+		stored: func() string {
+			out, err := sdk.GetEmailIdentityPolicies(t.Context(),
+				&sesv2.GetEmailIdentityPoliciesInput{EmailIdentity: aws.String(identity)})
+			requireNoErr(t, err, "get the identity's policies")
+			return out.Policies["partner"]
+		},
+	}
+}
+
+// functionChangedSince is a function whose page reads no policy, and that
+// AddPermission then gives one.
+func functionChangedSince(t *testing.T) changedSince {
+	t.Helper()
+	sdk := awsclient.Lambda(endpoint("functions"), rootCreds)
+	name := unique("guarded-")
+	createEcho(t, sdk, name)
+	arn := "arn:aws:lambda:" + region + ":000000000000:function:" + name
+	return changedSince{
+		page: "/lambda/function?name=" + name, save: "/lambda/function/policy",
+		id:   "function-policy",
+		form: url.Values{"document": {grant("Mine", "lambda:InvokeFunction", arn)}},
+		change: func() {
+			_, err := sdk.AddPermission(t.Context(), &lambda.AddPermissionInput{
+				FunctionName: aws.String(name), StatementId: aws.String("theirs"),
+				Action: aws.String("lambda:InvokeFunction"), Principal: aws.String("000000000000"),
+			})
+			requireNoErr(t, err, "add permission")
+		},
+		stored: func() string {
+			out, err := sdk.GetPolicy(
+				t.Context(),
+				&lambda.GetPolicyInput{FunctionName: aws.String(name)},
+			)
+			requireNoErr(t, err, "get the function policy")
+			return aws.ToString(out.Policy)
+		},
+	}
 }

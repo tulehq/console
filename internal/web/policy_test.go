@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -44,5 +45,32 @@ func TestFormatJSON(t *testing.T) {
 	}
 	if got := web.FormatJSON("{not json"); got != "{not json" {
 		t.Fatalf("FormatJSON of a non-JSON document: %q", got)
+	}
+}
+
+func TestUnchanged(t *testing.T) {
+	doc := `{"Statement":[]}`
+	if web.PolicyVersion("") != "" || web.PolicyVersion(doc) == "" {
+		t.Fatal("a policy's version must be empty for none only")
+	}
+	if err := web.Unchanged(web.PolicyVersion(doc), doc); err != nil {
+		t.Fatalf("the loaded policy: %v", err)
+	}
+	if err := web.Unchanged("", ""); err != nil {
+		t.Fatalf("no policy loaded, none stored: %v", err)
+	}
+	for _, c := range []struct{ loaded, stored string }{
+		{"", doc}, {web.PolicyVersion(doc), ""}, {web.PolicyVersion(doc), doc + " "},
+	} {
+		err := web.Unchanged(c.loaded, c.stored)
+		if f := web.Describe(err); f.Status != http.StatusConflict {
+			t.Fatalf(
+				"Unchanged(%q, %q) = %v, status %d, want 409",
+				c.loaded,
+				c.stored,
+				err,
+				f.Status,
+			)
+		}
 	}
 }

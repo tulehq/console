@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 
 	"tule.dev/console/internal/consoletest"
+	"tule.dev/console/internal/web"
 )
 
 // broad reports whether doc grants "Principal": "*", the fake's rule for a
@@ -137,7 +138,9 @@ func TestSecretPolicy(t *testing.T) {
 		t.Fatal("BlockPublicPolicy was not sent")
 	}
 
-	res = b.PostForm("/secrets/secret/policy/delete", url.Values{"id": {"db/password"}})
+	res = b.PostForm("/secrets/secret/policy/delete", url.Values{
+		"id": {"db/password"}, "loaded": {web.PolicyVersion(accountPolicy)},
+	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the resource policy")
 	if _, ok, _ := f.policies.Get("db/password"); ok {
 		t.Fatal("the policy was not deleted")
@@ -195,4 +198,34 @@ func TestSecretPolicyDenied(t *testing.T) {
 	consoletest.RequireText(t, res, "Versions", "The policy could not be read.",
 		"The service answered AccessDeniedException.",
 		"is not authorized to perform: secretsmanager:GetResourcePolicy")
+}
+
+func TestSecretPolicyChangedSincePageLoaded(t *testing.T) {
+	f := newFake()
+	f.add("db/password", "", "s3cret")
+	b := start(t, f)
+	page := b.Get("/secrets/secret?id=db/password")
+	if err := f.policies.Put("db/password", publicPolicy, "x"); err != nil {
+		t.Fatal(err)
+	}
+	res := b.PostForm("/secrets/secret/policy", consoletest.Hidden(page,
+		consoletest.FormTo("/secrets/secret/policy"), "document", accountPolicy))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	consoletest.RequireText(
+		t,
+		res,
+		"The policy changed since the page was loaded",
+		`"Principal": "*"`,
+	)
+	if got := consoletest.Text(
+		consoletest.Find(res.Doc, consoletest.ByName("document")),
+	); got != accountPolicy {
+		t.Fatalf("the form holds %q, want the typed document", got)
+	}
+	if doc, _, _ := f.policies.Get("db/password"); doc != publicPolicy {
+		t.Fatalf("the change made since was overwritten: %s", doc)
+	}
+	res = b.PostForm("/secrets/secret/policy/delete", consoletest.Hidden(page,
+		consoletest.FormTo("/secrets/secret/policy")))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
 }

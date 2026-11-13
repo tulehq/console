@@ -77,6 +77,10 @@ func consoleFailure(err error) (Failure, bool) {
 			Status:  http.StatusBadGateway,
 		}, true
 	}
+	var changed *ChangedError
+	if errors.As(err, &changed) {
+		return Failure{Message: changed.Error(), Status: http.StatusConflict}, true
+	}
 	var missing *NotFoundError
 	if errors.As(err, &missing) {
 		return Failure{Message: missing.Message, Status: http.StatusNotFound}, true

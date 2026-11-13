@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"tule.dev/console/internal/consoletest"
+	"tule.dev/console/internal/web"
 )
 
 func (f *fakeQueues) name(u *string) string {
@@ -128,7 +129,9 @@ func TestQueuePolicy(t *testing.T) {
 	consoletest.RequireStatus(t, res, http.StatusBadRequest)
 	consoletest.RequireText(t, res, "InvalidParameterValue", "can't find label")
 
-	res = b.PostForm("/sqs/queue/policy/delete", url.Values{"name": {"orders"}})
+	res = b.PostForm("/sqs/queue/policy/delete", url.Values{
+		"name": {"orders"}, "loaded": {web.PolicyVersion(doc)},
+	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the policy of queue orders.")
 	if _, ok, _ := f.policies.Get("orders"); ok {
 		t.Fatal("the policy was not deleted")
@@ -153,4 +156,37 @@ func mustStatements(t *testing.T, doc string) []any {
 		t.Fatalf("policy %q: %v", doc, err)
 	}
 	return p.Statement
+}
+
+// TestQueuePolicyChangedSincePageLoaded refuses a save that would drop a
+// statement AddPermission added after the page was read.
+func TestQueuePolicyChangedSincePageLoaded(t *testing.T) {
+	f := newFake()
+	f.add("orders", false)
+	b := start(t, f)
+	page := b.Get("/sqs/queue?name=orders")
+	if err := f.policies.Put("orders", twoStatements, "x"); err != nil {
+		t.Fatal(err)
+	}
+	mine := `{"Statement":[{"Sid":"mine","Effect":"Allow","Principal":"*","Action":"sqs:*"}]}`
+	res := b.PostForm("/sqs/queue/policy", consoletest.Hidden(page,
+		consoletest.FormTo("/sqs/queue/policy"), "document", mine))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	consoletest.RequireText(
+		t,
+		res,
+		"The policy changed since the page was loaded",
+		"The stored policy now",
+	)
+	if got := consoletest.Text(
+		consoletest.Find(res.Doc, consoletest.ByName("document")),
+	); got != mine {
+		t.Fatalf("the form holds %q, want the typed document", got)
+	}
+	if doc, _, _ := f.policies.Get("orders"); doc != twoStatements {
+		t.Fatalf("the statements added since were lost: %s", doc)
+	}
+	res = b.PostForm("/sqs/queue/policy/delete", consoletest.Hidden(page,
+		consoletest.FormTo("/sqs/queue/policy")))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
 }

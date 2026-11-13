@@ -41,16 +41,38 @@ func loadPolicy(ctx context.Context, api API, bucket string) *web.Policy {
 		Fields:       []web.Field{{Name: "bucket", Value: bucket}},
 		Placeholder:  strings.ReplaceAll(policyExample, "BUCKET", bucket),
 	}
-	out, err := api.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+	doc, err := readPolicy(ctx, api, bucket)
 	switch {
-	case web.Code(err) == "NoSuchBucketPolicy":
 	case err != nil:
 		p.ReadErr = web.ReadFailure(err)
-	default:
+	case doc != "":
 		p.Exists = true
-		p.Document = web.FormatJSON(aws.ToString(out.Policy))
+		p.Document = web.FormatJSON(doc)
 	}
+	p.Fields = append(p.Fields, web.Field{Name: web.LoadedField, Value: web.PolicyVersion(doc)})
 	return p
+}
+
+// readPolicy returns the bucket's policy as stored, "" for none.
+func readPolicy(ctx context.Context, api API, bucket string) (string, error) {
+	out, err := api.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+	if web.Code(err) == "NoSuchBucketPolicy" {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.Policy), nil
+}
+
+// unchanged refuses a change to the bucket's policy unless it is still the
+// one the page was read with, so a change made since is not lost.
+func unchanged(c gas.Context, api API, bucket string) error {
+	stored, err := readPolicy(c, api, bucket)
+	if err != nil {
+		return err
+	}
+	return web.Unchanged(c.Request().PostForm.Get(web.LoadedField), stored)
 }
 
 // putPolicy attaches the posted policy to the bucket, replacing its own.
@@ -59,11 +81,12 @@ func loadPolicy(ctx context.Context, api API, bucket string) *web.Policy {
 func (m *Module) putPolicy(c gas.Context) error {
 	form := c.Request().PostForm
 	bucket, doc := form.Get("bucket"), form.Get("document")
+	api := m.client(c)
 	var err error
 	if strings.TrimSpace(doc) == "" {
 		err = &web.BadInput{Message: "Enter the policy document."}
-	} else {
-		_, err = m.client(c).PutBucketPolicy(c, &s3.PutBucketPolicyInput{
+	} else if err = unchanged(c, api, bucket); err == nil {
+		_, err = api.PutBucketPolicy(c, &s3.PutBucketPolicyInput{
 			Bucket: aws.String(bucket), Policy: aws.String(doc),
 		})
 	}
@@ -75,9 +98,13 @@ func (m *Module) putPolicy(c gas.Context) error {
 
 func (m *Module) deletePolicy(c gas.Context) error {
 	bucket := c.Request().PostForm.Get("bucket")
-	_, err := m.client(c).DeleteBucketPolicy(c, &s3.DeleteBucketPolicyInput{
-		Bucket: aws.String(bucket),
-	})
+	api := m.client(c)
+	err := unchanged(c, api, bucket)
+	if err == nil {
+		_, err = api.DeleteBucketPolicy(c, &s3.DeleteBucketPolicyInput{
+			Bucket: aws.String(bucket),
+		})
+	}
 	if err != nil {
 		return m.refused(c, bucket, "", err)
 	}
@@ -89,7 +116,7 @@ func (m *Module) deletePolicy(c gas.Context) error {
 func (m *Module) refused(c gas.Context, bucket, doc string, err error) error {
 	v, lerr := m.load(c, bucket, "", "")
 	if lerr != nil {
-		return m.render.Fail(c, Key, bucket, lerr)
+		return m.render.FailRefused(c, Key, bucket, err, lerr)
 	}
 	if doc == "" {
 		doc = v.Policy.Document

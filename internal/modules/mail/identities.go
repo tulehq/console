@@ -153,7 +153,7 @@ func (m *Module) loadIdentity(c gas.Context, name string) (identityView, error) 
 		resource = "arn:aws:ses:REGION:ACCOUNT:identity/" + name
 	}
 	v.New = m.namedPolicy(name, "", "")
-	v.New.ID, v.New.Placeholder = "policy-new", strings.ReplaceAll(
+	v.New.ID, v.New.Placeholder = "policy-add", strings.ReplaceAll(
 		policyExample,
 		"IDENTITY",
 		resource,
@@ -176,15 +176,20 @@ func (m *Module) loadIdentity(c gas.Context, name string) (identityView, error) 
 	for _, n := range names {
 		p := m.namedPolicy(name, n, web.FormatJSON(pols.Policies[n]))
 		p.Exists = true
+		p.Fields = append(p.Fields, web.Field{
+			Name: web.LoadedField, Value: web.PolicyVersion(pols.Policies[n]),
+		})
 		v.Policies = append(v.Policies, p)
 	}
 	return v, nil
 }
 
-// namedPolicy is the form of the identity's policy name holding doc.
+// namedPolicy is the form of the identity's policy name holding doc. Its
+// ID's prefix is not the new policy's form's, "policy-add", whatever the
+// name.
 func (m *Module) namedPolicy(identity, name, doc string) *web.Policy {
 	return &web.Policy{
-		ID:           "policy-" + name,
+		ID:           "policy-named-" + name,
 		Name:         name,
 		Named:        true,
 		Document:     doc,
@@ -225,6 +230,9 @@ func (m *Module) putPolicy(c gas.Context) error {
 			Policy: aws.String(doc),
 		})
 	default:
+		if err = m.unchanged(c, identity, name); err != nil {
+			break
+		}
 		_, err = m.ses(c).UpdateEmailIdentityPolicy(c, &sesv2.UpdateEmailIdentityPolicyInput{
 			EmailIdentity: aws.String(identity), PolicyName: aws.String(name),
 			Policy: aws.String(doc),
@@ -243,13 +251,29 @@ func (m *Module) putPolicy(c gas.Context) error {
 func (m *Module) deletePolicy(c gas.Context) error {
 	form := c.Request().PostForm
 	identity, name := form.Get("identity"), form.Get("name")
-	_, err := m.ses(c).DeleteEmailIdentityPolicy(c, &sesv2.DeleteEmailIdentityPolicyInput{
-		EmailIdentity: aws.String(identity), PolicyName: aws.String(name),
-	})
+	err := m.unchanged(c, identity, name)
+	if err == nil {
+		_, err = m.ses(c).DeleteEmailIdentityPolicy(c, &sesv2.DeleteEmailIdentityPolicyInput{
+			EmailIdentity: aws.String(identity), PolicyName: aws.String(name),
+		})
+	}
 	if err != nil {
 		return m.refused(c, identity, name, "", false, err)
 	}
 	return web.Done(c, identityLink(identity), "Deleted policy "+name+" of "+identity+".")
+}
+
+// unchanged refuses a change to the identity's policy name unless it is
+// still the one the page was read with: UpdateEmailIdentityPolicy would
+// replace a change made since, or do nothing for a policy deleted since.
+func (m *Module) unchanged(c gas.Context, identity, name string) error {
+	out, err := m.ses(c).GetEmailIdentityPolicies(c, &sesv2.GetEmailIdentityPoliciesInput{
+		EmailIdentity: aws.String(identity),
+	})
+	if err != nil {
+		return err
+	}
+	return web.Unchanged(c.Request().PostForm.Get(web.LoadedField), out.Policies[name])
 }
 
 // refused shows the identity's page with err next to the form of policy
@@ -260,16 +284,18 @@ func (m *Module) refused(
 ) error {
 	v, lerr := m.loadIdentity(c, identity)
 	if lerr != nil {
-		return m.render.Fail(c, Key, identity, lerr)
+		return m.render.FailRefused(c, Key, identity, err, lerr)
 	}
 	p := v.New
 	if !isNew {
 		i := slices.IndexFunc(v.Policies, func(p *web.Policy) bool { return p.Name == name })
 		if i < 0 {
-			// Gone since the page was read, or unreadable: the answer is
-			// shown on a form of its own, with what was sent.
+			// Unreadable, or gone since the page was read: the answer is
+			// shown on a form of its own, with what was sent, which saves
+			// to the policy if it is there, and creates it if it is gone.
 			p = m.namedPolicy(identity, name, doc)
-			p.Exists = true
+			p.Unknown = v.PoliciesErr != nil
+			p.Exists = p.Unknown
 			v.Policies = append(v.Policies, p)
 		} else {
 			p = v.Policies[i]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,6 +12,7 @@ import (
 	"github.com/aws/smithy-go"
 
 	"tule.dev/console/internal/consoletest"
+	"tule.dev/console/internal/web"
 )
 
 func (f *fakeS3) GetBucketPolicy(
@@ -86,7 +88,9 @@ func TestBucketPolicy(t *testing.T) {
 		t.Fatal("no delete for the stored policy")
 	}
 
-	res = b.PostForm("/s3/bucket/policy/delete", url.Values{"bucket": {"photos"}})
+	res = b.PostForm("/s3/bucket/policy/delete", url.Values{
+		"bucket": {"photos"}, "loaded": {web.PolicyVersion(readPolicy)},
+	})
 	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Deleted the policy of bucket photos.")
 	if _, ok, _ := f.policies.Get("photos"); ok {
 		t.Fatal("the policy was not deleted")
@@ -114,4 +118,74 @@ func TestBucketPolicyDenied(t *testing.T) {
 	if consoletest.Find(res.Doc, consoletest.ByID("bucket-policy-error")) == nil {
 		t.Fatal("the refusal is not next to the form")
 	}
+}
+
+// TestBucketPolicyChangedSincePageLoaded refuses a save and a delete when
+// the policy changed after the page read it, keeping the typed document
+// and showing the stored one.
+func TestBucketPolicyChangedSincePageLoaded(t *testing.T) {
+	f := newFake()
+	f.buckets["photos"] = map[string]object{}
+	b := start(t, f)
+	page := b.Get("/s3/bucket?bucket=photos")
+
+	// Another client attaches a policy after the page was read.
+	other := strings.Replace(readPolicy, "s3:GetObject", "s3:PutObject", 1)
+	if err := f.policies.Put("photos", other, "MalformedPolicy"); err != nil {
+		t.Fatal(err)
+	}
+	res := b.PostForm("/s3/bucket/policy", consoletest.Hidden(page,
+		consoletest.FormTo("/s3/bucket/policy"), "document", readPolicy))
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	consoletest.RequireText(t, res, "The policy changed since the page was loaded",
+		"The stored policy now", `"Action": "s3:PutObject"`)
+	if got := consoletest.Text(
+		consoletest.Find(res.Doc, consoletest.ByName("document")),
+	); got != readPolicy {
+		t.Fatalf("the form holds %q, want the typed document", got)
+	}
+	if doc, _, _ := f.policies.Get("photos"); doc != other {
+		t.Fatalf("the change made since was overwritten: %s", doc)
+	}
+
+	// The refused page carries the policy as it is now: saving from it
+	// replaces it, as asked.
+	res = b.PostForm("/s3/bucket/policy", consoletest.Hidden(res,
+		consoletest.FormTo("/s3/bucket/policy"), "document", readPolicy))
+	consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Saved the policy")
+
+	// A delete from a page read before the save is refused too.
+	res = b.PostForm("/s3/bucket/policy/delete", url.Values{
+		"bucket": {"photos"}, "loaded": {web.PolicyVersion(other)},
+	})
+	consoletest.RequireStatus(t, res, http.StatusConflict)
+	if _, ok, _ := f.policies.Get("photos"); !ok {
+		t.Fatal("the delete went through")
+	}
+}
+
+// TestBucketPolicyRefusedUnknown shows a refused save whose policy cannot
+// be read again as unknown, not as no policy, and keeps a refusal whose
+// page cannot be shown again.
+func TestBucketPolicyRefusedUnknown(t *testing.T) {
+	f := newFake()
+	f.buckets["photos"] = map[string]object{}
+	f.policies.Denied = consoletest.AccessDenied("s3:GetBucketPolicy")
+	b := start(t, f)
+	res := b.PostForm(
+		"/s3/bucket/policy",
+		url.Values{"bucket": {"photos"}, "document": {readPolicy}},
+	)
+	consoletest.RequireStatus(t, res, http.StatusForbidden)
+	consoletest.RequireText(t, res, "whether there is one is unknown", "s3:GetBucketPolicy")
+	if strings.Contains(consoletest.Text(res.Doc), "No policy.") {
+		t.Fatal("a policy that could not be read shows as none")
+	}
+
+	// The bucket is gone, so its page fails too: both are shown.
+	f.policies.Denied = consoletest.AccessDenied("s3:PutBucketPolicy")
+	res = b.PostForm("/s3/bucket/policy", url.Values{"bucket": {"gone"}, "document": {readPolicy}})
+	consoletest.RequireStatus(t, res, http.StatusForbidden)
+	consoletest.RequireText(t, res, "The policy was not changed", "s3:PutBucketPolicy",
+		"The page could not be shown again", "NoSuchBucket")
 }

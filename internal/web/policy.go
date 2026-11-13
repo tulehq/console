@@ -2,7 +2,10 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -35,6 +38,9 @@ type Policy struct {
 	ValidateAction string
 	// Document is the stored policy, indented, or what was typed.
 	Document string
+	// Current is the stored policy, indented, when a save was refused
+	// because it changed since the page was read.
+	Current string
 	// Placeholder is an example document for an empty form.
 	Placeholder string
 	// RemoveAction removes one of Statements by its Sid, sent as
@@ -47,6 +53,9 @@ type Policy struct {
 	Statements []Statement
 	// Exists is set when the resource has the policy stored.
 	Exists bool
+	// Unknown is set when a refused save is shown and the policy could not
+	// be read again, so whether one is stored is not known.
+	Unknown bool
 	// Named is set for a resource that holds several policies by name;
 	// a form of a policy that does not exist yet then asks for its name.
 	Named bool
@@ -164,6 +173,44 @@ func compact(raw, negated json.RawMessage, prefix string) string {
 // so what was typed is not lost.
 func (p *Policy) Refuse(doc string, err error) int {
 	f := Describe(err)
+	if p.ReadErr != nil {
+		p.Unknown = true
+	}
+	if errors.As(err, new(*ChangedError)) && p.Exists {
+		p.Current = p.Document
+	}
 	p.ReadErr, p.Error, p.Document = nil, &f, doc
 	return f.Status
+}
+
+// LoadedField is the hidden field that carries the version of the policy a
+// page was read with.
+const LoadedField = "loaded"
+
+// PolicyVersion is the version of a stored policy doc a form sends back as
+// LoadedField: a hash of it, or "" for no policy.
+func PolicyVersion(doc string) string {
+	if doc == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(doc))
+	return hex.EncodeToString(sum[:])
+}
+
+// ChangedError is a save refused because the policy stored now is not the
+// one the page was read with, so the save would lose a change made since.
+type ChangedError struct{}
+
+func (*ChangedError) Error() string {
+	return "The policy changed since the page was loaded, so it was not saved. " +
+		"The document you sent is kept below; compare it with the stored policy and save again."
+}
+
+// Unchanged returns a ChangedError unless stored, the policy as it is now
+// ("" for none), is the version loaded that the form sent.
+func Unchanged(loaded, stored string) error {
+	if PolicyVersion(stored) != loaded {
+		return &ChangedError{}
+	}
+	return nil
 }

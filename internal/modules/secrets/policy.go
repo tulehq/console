@@ -48,17 +48,37 @@ func newPolicy(name, arn string) *web.Policy {
 // has the service's answer in its place.
 func loadPolicy(ctx context.Context, api API, name, arn string) *web.Policy {
 	p := newPolicy(name, arn)
-	out, err := api.GetResourcePolicy(ctx, &secretsmanager.GetResourcePolicyInput{
-		SecretId: aws.String(name),
-	})
+	doc, err := readPolicy(ctx, api, name)
 	switch {
 	case err != nil:
 		p.ReadErr = web.ReadFailure(err)
-	case out.ResourcePolicy != nil:
+	case doc != "":
 		p.Exists = true
-		p.Document = web.FormatJSON(aws.ToString(out.ResourcePolicy))
+		p.Document = web.FormatJSON(doc)
 	}
+	p.Fields = append(p.Fields, web.Field{Name: web.LoadedField, Value: web.PolicyVersion(doc)})
 	return p
+}
+
+// readPolicy returns the secret's resource policy as stored, "" for none.
+func readPolicy(ctx context.Context, api API, id string) (string, error) {
+	out, err := api.GetResourcePolicy(ctx, &secretsmanager.GetResourcePolicyInput{
+		SecretId: aws.String(id),
+	})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.ResourcePolicy), nil
+}
+
+// unchanged refuses a change to the secret's policy unless it is still the
+// one the page was read with, so a change made since is not lost.
+func unchanged(c gas.Context, api API, id string) error {
+	stored, err := readPolicy(c, api, id)
+	if err != nil {
+		return err
+	}
+	return web.Unchanged(c.Request().PostForm.Get(web.LoadedField), stored)
 }
 
 // putPolicy attaches the posted policy to the secret, replacing its own,
@@ -68,35 +88,35 @@ func loadPolicy(ctx context.Context, api API, name, arn string) *web.Policy {
 func (m *Module) putPolicy(c gas.Context) error {
 	form := c.Request().PostForm
 	id, doc, block := form.Get("id"), form.Get("document"), form.Get("blockPublic") == "on"
+	api := m.client(c)
 	var err error
 	if strings.TrimSpace(doc) == "" {
 		err = &web.BadInput{Message: "Enter the policy document."}
-	} else {
-		_, err = m.client(c).PutResourcePolicy(c, &secretsmanager.PutResourcePolicyInput{
+	} else if err = unchanged(c, api, id); err == nil {
+		_, err = api.PutResourcePolicy(c, &secretsmanager.PutResourcePolicyInput{
 			SecretId:          aws.String(id),
 			ResourcePolicy:    aws.String(doc),
 			BlockPublicPolicy: aws.Bool(block),
 		})
 	}
 	if err != nil {
-		return m.showPolicy(
-			c,
-			id,
-			doc,
-			block,
-			func(p *web.Policy) int { return p.Refuse(doc, err) },
-		)
+		return m.showPolicy(c, id, doc, block, err,
+			func(p *web.Policy) int { return p.Refuse(doc, err) })
 	}
 	return web.Done(c, secretLink(id), "Saved the resource policy of secret "+id+".")
 }
 
 func (m *Module) deletePolicy(c gas.Context) error {
 	id := c.Request().PostForm.Get("id")
-	_, err := m.client(c).DeleteResourcePolicy(c, &secretsmanager.DeleteResourcePolicyInput{
-		SecretId: aws.String(id),
-	})
+	api := m.client(c)
+	err := unchanged(c, api, id)
+	if err == nil {
+		_, err = api.DeleteResourcePolicy(c, &secretsmanager.DeleteResourcePolicyInput{
+			SecretId: aws.String(id),
+		})
+	}
 	if err != nil {
-		return m.showPolicy(c, id, "", true, func(p *web.Policy) int {
+		return m.showPolicy(c, id, "", true, err, func(p *web.Policy) int {
 			return p.Refuse(p.Document, err)
 		})
 	}
@@ -120,7 +140,7 @@ func (m *Module) validatePolicy(c gas.Context) error {
 				ResourcePolicy: aws.String(doc),
 			})
 	}
-	return m.showPolicy(c, id, doc, block, func(p *web.Policy) int {
+	return m.showPolicy(c, id, doc, block, err, func(p *web.Policy) int {
 		if err != nil {
 			return p.Refuse(doc, err)
 		}
@@ -137,18 +157,23 @@ func (m *Module) validatePolicy(c gas.Context) error {
 
 // showPolicy shows the secret's page with its policy section changed by
 // set, which returns the status to answer with, and the box as it was
-// posted.
+// posted. When the page cannot be shown, refusal, the action's own error
+// if it had one, is shown with why.
 func (m *Module) showPolicy(
-	c gas.Context, id, doc string, block bool, set func(*web.Policy) int,
+	c gas.Context, id, doc string, block bool, refusal error, set func(*web.Policy) int,
 ) error {
 	v, err := m.describe(c, id)
 	if err != nil {
+		if refusal != nil {
+			return m.render.FailRefused(c, Key, id, refusal, err)
+		}
 		return m.render.Fail(c, Key, id, err)
 	}
 	if v.Policy == nil {
 		// A secret scheduled for deletion: the form is shown for the
 		// answer, though the stored policy was not read.
 		v.Policy = newPolicy(v.Name, v.ARN)
+		v.Policy.Unknown = true
 	}
 	if doc != "" {
 		v.Policy.BlockPublic = block
