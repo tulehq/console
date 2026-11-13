@@ -126,11 +126,18 @@ func message(id, subject, html string) mail.Message {
 
 func start(t *testing.T, f *fakeMailbox) *consoletest.Browser {
 	t.Helper()
+	return startWith(t, f, &fakeSES{})
+}
+
+// startWith runs the console over the fake mailbox's retrieval API and the
+// fake SES API.
+func startWith(t *testing.T, f *fakeMailbox, ses *fakeSES) *consoletest.Browser {
+	t.Helper()
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	ep := awsclient.Endpoint{URL: srv.URL, Region: "us-east-1", HTTP: srv.Client()}
-	s := consoletest.Start(t, app.Overrides{Mailbox: func(c aws.Credentials) mail.API {
-		return mail.NewClient(ep, c)
+	s := consoletest.Start(t, app.Overrides{Mailbox: func(c aws.Credentials) mail.Clients {
+		return mail.Clients{Retrieval: mail.NewClient(ep, c), SES: ses}
 	}}, nil, "mail")
 	b := s.Browser(t)
 	b.SignIn(consoletest.KeyID, consoletest.Secret)

@@ -33,13 +33,14 @@ type object struct {
 
 // fakeS3 is an S3 of buckets in memory, enough of one for the section.
 type fakeS3 struct {
-	buckets map[string]map[string]object
-	uploads map[string][][]byte
-	held    chan struct{}
-	release chan struct{}
-	creds   []aws.Credentials
-	puts    int
-	mu      sync.Mutex
+	buckets  map[string]map[string]object
+	uploads  map[string][][]byte
+	held     chan struct{}
+	release  chan struct{}
+	policies consoletest.PolicyStore
+	creds    []aws.Credentials
+	puts     int
+	mu       sync.Mutex
 }
 
 func newFake() *fakeS3 {

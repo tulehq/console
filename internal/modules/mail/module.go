@@ -1,7 +1,8 @@
 // Package mail is the mailbox section: the stored messages with every
 // filter of mailbox's retrieval API and full-text search, a message with
 // its headers, text, an HTML preview in a sandboxed frame, its raw MIME and
-// attachments, the rendering failures, and deleting one message or all.
+// attachments, the rendering failures, deleting one message or all, and
+// the email identities with their sending authorization policies.
 package mail
 
 import (
@@ -31,20 +32,27 @@ const (
 	pageSize = "50"
 )
 
-// NewAPI returns the client for a session's credentials.
-type NewAPI func(aws.Credentials) API
+// Clients are the two APIs the section calls: mailbox's retrieval API and
+// the SES v2 API.
+type Clients struct {
+	Retrieval API
+	SES       SES
+}
+
+// NewClients returns the clients for a session's credentials.
+type NewClients func(aws.Credentials) Clients
 
 // Module serves the section.
 type Module struct {
-	router *gas.Router
-	render *web.Renderer
-	newAPI NewAPI
+	router     *gas.Router
+	render     *web.Renderer
+	newClients NewClients
 }
 
 // NewModule returns the module. It registers its routes when the app
 // initializes it.
-func NewModule(router *gas.Router, render *web.Renderer, newAPI NewAPI) *Module {
-	return &Module{router: router, render: render, newAPI: newAPI}
+func NewModule(router *gas.Router, render *web.Renderer, newClients NewClients) *Module {
+	return &Module{router: router, render: render, newClients: newClients}
 }
 
 // Name identifies the module to gas.
@@ -61,6 +69,10 @@ func (m *Module) Init(context.Context) error {
 		g.Post("/message/delete", m.remove)
 		g.Post("/reset", m.reset)
 		g.Get("/failures", m.failures)
+		g.Get("/identities", m.identities)
+		g.Get("/identity", m.identity)
+		g.Post("/identity/policy", m.putPolicy)
+		g.Post("/identity/policy/delete", m.deletePolicy)
 	})
 	return nil
 }
@@ -69,7 +81,11 @@ func (m *Module) Init(context.Context) error {
 func (m *Module) Close(context.Context) error { return nil }
 
 func (m *Module) api(c gas.Context) API {
-	return m.newAPI(web.FromContext(c).Credentials())
+	return m.newClients(web.FromContext(c).Credentials()).Retrieval
+}
+
+func (m *Module) ses(c gas.Context) SES {
+	return m.newClients(web.FromContext(c).Credentials()).SES
 }
 
 func messageLink(id string) string {

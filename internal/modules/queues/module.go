@@ -61,6 +61,21 @@ type SQS interface {
 		*sqs.GetQueueUrlInput,
 		...func(*sqs.Options),
 	) (*sqs.GetQueueUrlOutput, error)
+	GetQueueAttributes(
+		context.Context,
+		*sqs.GetQueueAttributesInput,
+		...func(*sqs.Options),
+	) (*sqs.GetQueueAttributesOutput, error)
+	SetQueueAttributes(
+		context.Context,
+		*sqs.SetQueueAttributesInput,
+		...func(*sqs.Options),
+	) (*sqs.SetQueueAttributesOutput, error)
+	RemovePermission(
+		context.Context,
+		*sqs.RemovePermissionInput,
+		...func(*sqs.Options),
+	) (*sqs.RemovePermissionOutput, error)
 }
 
 // Clients are the two APIs the section calls.
@@ -97,6 +112,9 @@ func (m *Module) Init(context.Context) error {
 		g.Post("/queue/send", m.send)
 		g.Post("/queue/purge", m.purge)
 		g.Post("/queue/delete", m.remove)
+		g.Post("/queue/policy", m.putPolicy)
+		g.Post("/queue/policy/delete", m.deletePolicy)
+		g.Post("/queue/permission/remove", m.removePermission)
 	})
 	return nil
 }
@@ -157,6 +175,7 @@ type MessageRow struct {
 }
 
 type queueView struct {
+	Policy     *web.Policy
 	State      string
 	Group      string
 	NextLink   string
@@ -168,31 +187,40 @@ type queueView struct {
 }
 
 func (m *Module) queue(c gas.Context) error {
-	name, state, group := c.Query("name"), c.Query("state"), c.Query("group")
+	name := c.Query("name")
+	v, err := m.load(c, name, c.Query("state"), c.Query("group"), c.Query("cursor"))
+	if err != nil {
+		return m.render.Fail(c, Key, name, err)
+	}
+	return m.render.Render(c, web.Page{Name: "queues/queue", Title: name, Section: Key, Data: v})
+}
+
+// load reads the queue, a page of its messages in state and group from
+// cursor, and its policy.
+func (m *Module) load(c gas.Context, name, state, group, cursor string) (queueView, error) {
 	cl := m.clients(c)
 	qs, err := cl.Inspect.Queues(c)
 	if err != nil {
-		return m.render.Fail(c, Key, name, err)
+		return queueView{}, err
 	}
 	v := queueView{State: state, Group: group}
 	i := slices.IndexFunc(qs, func(q Queue) bool { return q.Name == name })
 	if i < 0 {
-		return m.render.Fail(c, Key, name,
-			&web.NotFoundError{Message: "There is no queue named " + name + "."})
+		return queueView{}, &web.NotFoundError{Message: "There is no queue named " + name + "."}
 	}
 	v.Queue = qs[i]
 	v.FIFO = v.Queue.Attributes["FifoQueue"] == "true"
 	v.Attributes = sorted(v.Queue.Attributes)
 
 	query := url.Values{"limit": {pageSize}}
-	for k, val := range map[string]string{"state": state, "group": group, "cursor": c.Query("cursor")} {
+	for k, val := range map[string]string{"state": state, "group": group, "cursor": cursor} {
 		if val != "" {
 			query.Set(k, val)
 		}
 	}
 	p, err := cl.Inspect.Messages(c, name, query)
 	if err != nil {
-		return m.render.Fail(c, Key, name, err)
+		return queueView{}, err
 	}
 	for _, msg := range p.Items {
 		v.Messages = append(v.Messages, messageRow(msg))
@@ -210,10 +238,11 @@ func (m *Module) queue(c gas.Context) error {
 			p.NextCursor,
 		)
 	}
-	if c.Query("cursor") != "" {
+	if cursor != "" {
 		v.FirstLink = web.Link(Path+"/queue", "name", name, "state", state, "group", group)
 	}
-	return m.render.Render(c, web.Page{Name: "queues/queue", Title: name, Section: Key, Data: v})
+	v.Policy = loadPolicy(c, cl.SQS, name, v.Queue.ARN)
+	return v, nil
 }
 
 // messageRow is msg as the queue's page lists it, its attributes sorted.

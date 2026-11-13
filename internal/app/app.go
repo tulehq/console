@@ -50,7 +50,7 @@ type Overrides struct {
 	SecretStore secrets.NewClient
 	Accounts    accounts.NewClient
 	IAM         iam.NewClient
-	Mailbox     mail.NewAPI
+	Mailbox     mail.NewClients
 	Queues      queues.NewClients
 	Functions   functions.NewClients
 	// Store, when set, is given the session store once it is made.
@@ -227,9 +227,14 @@ func registerSections(app *gas.App, sections []web.Section, o Overrides) {
 		case mail.Key:
 			fn := o.Mailbox
 			if fn == nil {
-				fn = func(c aws.Credentials) mail.API { return mail.NewClient(ep, c) }
+				fn = func(c aws.Credentials) mail.Clients {
+					return mail.Clients{
+						Retrieval: mail.NewClient(ep, c),
+						SES:       awsclient.SESv2(ep, c),
+					}
+				}
 			}
-			app.RegisterServiceInstance[mail.NewAPI](fn)
+			app.RegisterServiceInstance[mail.NewClients](fn)
 			app.RegisterSingletonService[*mail.Module](mail.NewModule)
 		case queues.Key:
 			fn := o.Queues

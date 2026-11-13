@@ -62,6 +62,18 @@ type Lambda interface {
 	UpdateEventSourceMapping(
 		context.Context, *lambda.UpdateEventSourceMappingInput, ...func(*lambda.Options),
 	) (*lambda.UpdateEventSourceMappingOutput, error)
+	GetPolicy(
+		context.Context, *lambda.GetPolicyInput, ...func(*lambda.Options),
+	) (*lambda.GetPolicyOutput, error)
+	PutResourcePolicy(
+		context.Context, *lambda.PutResourcePolicyInput, ...func(*lambda.Options),
+	) (*lambda.PutResourcePolicyOutput, error)
+	DeleteResourcePolicy(
+		context.Context, *lambda.DeleteResourcePolicyInput, ...func(*lambda.Options),
+	) (*lambda.DeleteResourcePolicyOutput, error)
+	RemovePermission(
+		context.Context, *lambda.RemovePermissionInput, ...func(*lambda.Options),
+	) (*lambda.RemovePermissionOutput, error)
 }
 
 // Clients are the two APIs the section calls.
@@ -95,6 +107,9 @@ func (m *Module) Init(context.Context) error {
 		g.Get("/", m.functions)
 		g.Get("/function", m.function)
 		g.Post("/function/invoke", m.invoke)
+		g.Post("/function/policy", m.putPolicy)
+		g.Post("/function/policy/delete", m.deletePolicy)
+		g.Post("/function/permission/remove", m.removePermission)
 		g.Get("/invocations", m.invocations)
 		g.Get("/invocation", m.invocation)
 		g.Get("/mappings", m.mappings)
@@ -251,6 +266,7 @@ type Result struct {
 
 type functionView struct {
 	Result      *Result
+	Policy      *web.Policy
 	Payload     string
 	HistoryErr  string
 	HistoryLink string
@@ -284,6 +300,7 @@ func (m *Module) load(c gas.Context, name string) (functionView, error) {
 	for i := range maps.EventSourceMappings {
 		v.Mappings = append(v.Mappings, toMapping(&maps.EventSourceMappings[i]))
 	}
+	v.Policy = loadPolicy(c, cl.Lambda, name, v.ARN)
 	v.HistoryLink = web.Link(Path+"/invocations", "function", name)
 	// The history is the service's own API; the page stands without it.
 	p, err := cl.History.Invocations(

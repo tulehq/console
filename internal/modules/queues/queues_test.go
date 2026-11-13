@@ -23,13 +23,14 @@ import (
 // fakeQueues is queues in memory, behind both the inspection API, served
 // over HTTP, and the SQS client.
 type fakeQueues struct {
-	queues  map[string]*queues.Queue
-	msgs    map[string][]queues.Message
-	sent    []*sqs.SendMessageInput
-	created []*sqs.CreateQueueInput
-	purged  []string
-	queries []url.Values
-	mu      sync.Mutex
+	queues   map[string]*queues.Queue
+	msgs     map[string][]queues.Message
+	policies consoletest.PolicyStore
+	sent     []*sqs.SendMessageInput
+	created  []*sqs.CreateQueueInput
+	purged   []string
+	queries  []url.Values
+	mu       sync.Mutex
 }
 
 func newFake() *fakeQueues {
