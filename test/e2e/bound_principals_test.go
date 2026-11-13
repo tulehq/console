@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -39,29 +40,8 @@ type boundSection struct {
 // it again from the page unchanged. A save naming the deleted user's ARN,
 // which no principal has any more, is refused next to the form.
 func TestAPolicyNamingADeletedUser(t *testing.T) {
-	ic := awsclient.IAM(endpoint("identity"), rootCreds)
-	user := unique("named")
-	out, err := ic.CreateUser(t.Context(), &iam.CreateUserInput{UserName: aws.String(user)})
-	requireNoErr(t, err, "create user "+user)
-	userARN, userID := aws.ToString(out.User.Arn), aws.ToString(out.User.UserId)
-	if !strings.HasPrefix(userID, "AIDA") {
-		t.Fatalf("the IAM user's ID is %q, want a unique ID", userID)
-	}
-
-	bucket, secret, queue, identity := resources(t)
-	sections := []boundSection{
-		bucketBound(t, bucket), secretBound(t, secret), queueBound(t, queue),
-		identityBound(t, identity),
-	}
-	if fn.skip == "" {
-		sections = append(sections, functionBound(t))
-	}
-	for _, s := range sections {
-		s.put(s.doc(userARN))
-	}
-
-	_, err = ic.DeleteUser(t.Context(), &iam.DeleteUserInput{UserName: aws.String(user)})
-	requireNoErr(t, err, "delete user "+user)
+	sections, userARN, userID := sectionsNamingAUser(t)
+	deleteUser(t, userARN)
 
 	b := rootBrowser(t)
 	for _, s := range sections {
@@ -89,6 +69,91 @@ func TestAPolicyNamingADeletedUser(t *testing.T) {
 		requireRefused(t, res, s.id, s.code, s.doc(userARN), s.rest)
 		if got := s.stored(); mustCompact(t, got) != mustCompact(t, s.doc(userID)) {
 			t.Fatalf("%s: the refused save left %s", s.page, got)
+		}
+	}
+}
+
+// sectionsNamingAUser creates an IAM user and stores a policy naming it on
+// a bucket, a secret, a queue, an email identity and, when the functions
+// tests run, a function, and returns them with that IAM user's ARN and unique
+// ID.
+func sectionsNamingAUser(t *testing.T) (sections []boundSection, arn, id string) {
+	t.Helper()
+	ic := awsclient.IAM(endpoint("identity"), rootCreds)
+	user := unique("named")
+	out, err := ic.CreateUser(t.Context(), &iam.CreateUserInput{UserName: aws.String(user)})
+	requireNoErr(t, err, "create user "+user)
+	arn, id = aws.ToString(out.User.Arn), aws.ToString(out.User.UserId)
+	if !strings.HasPrefix(id, "AIDA") {
+		t.Fatalf("the IAM user's ID is %q, want a unique ID", id)
+	}
+
+	bucket, secret, queue, identity := resources(t)
+	sections = []boundSection{
+		bucketBound(t, bucket), secretBound(t, secret), queueBound(t, queue),
+		identityBound(t, identity),
+	}
+	if fn.skip == "" {
+		sections = append(sections, functionBound(t))
+	}
+	for _, s := range sections {
+		s.put(s.doc(arn))
+	}
+	return sections, arn, id
+}
+
+// deleteUser deletes the IAM user of arn.
+func deleteUser(t *testing.T, arn string) {
+	t.Helper()
+	user := arn[strings.LastIndex(arn, "/")+1:]
+	_, err := awsclient.IAM(endpoint("identity"), rootCreds).
+		DeleteUser(t.Context(), &iam.DeleteUserInput{UserName: aws.String(user)})
+	requireNoErr(t, err, "delete user "+user)
+}
+
+// TestAPrincipalDeletedSinceThePageLoaded reads each resource's page while
+// the IAM user its policy names exists, deletes that IAM user, and saves
+// from the page. The service's read now shows its unique ID where the page
+// read its ARN, so each save the console guards by the policy's hash is
+// refused as a change made since, with the stored policy, the ID in it,
+// below the form; saving again from that answer goes through. A function's
+// policy is guarded by its RevisionId, which deleting a principal does not
+// change, so its save goes through from the page as it was read.
+func TestAPrincipalDeletedSinceThePageLoaded(t *testing.T) {
+	sections, userARN, userID := sectionsNamingAUser(t)
+	b := rootBrowser(t)
+	pages := make([]*consoletest.Response, len(sections))
+	for i, s := range sections {
+		pages[i] = b.Get(s.page)
+		requireDocument(t, pages[i], s.id, s.doc(userARN))
+	}
+	deleteUser(t, userARN)
+
+	for i, s := range sections {
+		doc := s.doc(accountRoot)
+		form := consoletest.Hidden(pages[i], consoletest.FormHolding(s.id+"-document"))
+		form.Set("document", doc)
+		res := b.PostForm(s.save, form)
+		if s.id == "function-policy" {
+			consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Saved")
+			if got := s.stored(); mustCompact(t, got) != mustCompact(t, doc) {
+				t.Fatalf("%s: stored %s, want %s", s.page, got, doc)
+			}
+			continue
+		}
+		consoletest.RequireStatus(t, res, http.StatusConflict)
+		requireRefused(t, res, s.id, "", doc, "The policy changed since the page was loaded")
+		consoletest.RequireText(t, res, "The stored policy now", userID)
+		if got := s.stored(); mustCompact(t, got) != mustCompact(t, s.doc(userID)) {
+			t.Fatalf("%s: the refused save left %s", s.page, got)
+		}
+
+		form = consoletest.Hidden(res, consoletest.FormHolding(s.id+"-document"))
+		form.Set("document", doc)
+		res = b.PostForm(s.save, form)
+		consoletest.RequireFlash(t, b.Get(res.Location()), "ok", "Saved")
+		if got := s.stored(); mustCompact(t, got) != mustCompact(t, doc) {
+			t.Fatalf("%s: saved again, stored %s, want %s", s.page, got, doc)
 		}
 	}
 }
