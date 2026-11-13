@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"tule.dev/console/internal/app"
 	"tule.dev/console/internal/consoletest"
@@ -368,5 +370,70 @@ func TestHostileSecretsRenderInert(t *testing.T) {
 		res = b.PostForm("/secrets/secret/reveal", url.Values{"id": {h}})
 		consoletest.RequireInert(t, res)
 		consoletest.RequireText(t, res, h)
+	}
+}
+
+// deniedSM denies listing and reading secrets, as secret-store denies a
+// principal no policy allows to: AccessDeniedException, with 400.
+type deniedSM struct{ *fakeSM }
+
+func deny(action string) error {
+	return &awshttp.ResponseError{ResponseError: &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusBadRequest}},
+		Err: &smithy.GenericAPIError{
+			Code: "AccessDeniedException",
+			Message: "User: arn:aws:iam::000000000000:user/dev is not authorized to perform: " +
+				action + " because no identity-based policy allows the " + action + " action",
+		},
+	}}
+}
+
+func (deniedSM) ListSecrets(
+	context.Context, *secretsmanager.ListSecretsInput, ...func(*secretsmanager.Options),
+) (*secretsmanager.ListSecretsOutput, error) {
+	return nil, deny("secretsmanager:ListSecrets")
+}
+
+func (deniedSM) GetSecretValue(
+	context.Context, *secretsmanager.GetSecretValueInput, ...func(*secretsmanager.Options),
+) (*secretsmanager.GetSecretValueOutput, error) {
+	return nil, deny("secretsmanager:GetSecretValue")
+}
+
+func TestAccessDeniedInPagesAndFragments(t *testing.T) {
+	f := newFake()
+	f.add("prod/db", "", "hunter2")
+	s := consoletest.Start(t,
+		app.Overrides{SecretStore: func(aws.Credentials) secrets.API { return deniedSM{f} }},
+		nil, "secrets")
+	b := s.Browser(t)
+	b.SignIn(consoletest.KeyID, consoletest.Secret)
+
+	res := b.Get("/secrets")
+	consoletest.RequireStatus(t, res, http.StatusBadRequest)
+	consoletest.RequireText(t, res, "The service answered AccessDeniedException.",
+		"secretsmanager:ListSecrets")
+
+	// An HTMX search gets the failure alone, to swap where the results go.
+	res = b.HTMX("/secrets?q=prod")
+	consoletest.RequireStatus(t, res, http.StatusBadRequest)
+	if strings.Contains(string(res.Body), "<html") || strings.Contains(string(res.Body), "<nav") {
+		t.Fatal("an HTMX search's failure answered the whole page")
+	}
+	consoletest.RequireText(t, res, "AccessDeniedException", "secretsmanager:ListSecrets")
+
+	// So does a reveal, in place of the value.
+	page := b.Get("/secrets/secret?id=prod%2Fdb")
+	consoletest.RequireStatus(t, page, http.StatusOK)
+	res = b.HTMXPost("/secrets/secret/reveal", url.Values{"id": {"prod/db"}})
+	consoletest.RequireStatus(t, res, http.StatusBadRequest)
+	if strings.Contains(string(res.Body), "<html") {
+		t.Fatal("an HTMX reveal's failure answered the whole page")
+	}
+	consoletest.RequireText(t, res, "secretsmanager:GetSecretValue")
+
+	// The layout has htmx swap a failure as it swaps an answer.
+	if !strings.Contains(string(page.Body), `{"code":"[45]..","swap":true,"error":true}`) {
+		t.Fatal("htmx does not swap 4xx and 5xx answers")
 	}
 }

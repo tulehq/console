@@ -29,7 +29,11 @@ func Link(path string, kv ...string) string {
 }
 
 // Fail renders the section's error page for err, a failed service call,
-// with the status Describe gives it.
+// with the status Describe gives it. An HTMX request, such as a search or
+// a reveal, gets the failure block alone, which htmx swaps into its target
+// as it swaps the block it asked for: the layout's htmx-config swaps 4xx
+// and 5xx answers too, so a refusal such as AccessDenied shows where the
+// answer was to go.
 func (r *Renderer) Fail(c gas.Context, section, title string, err error) error {
 	f := Describe(err)
 	return r.Render(c, Page{
@@ -38,6 +42,7 @@ func (r *Renderer) Fail(c gas.Context, section, title string, err error) error {
 		Section: section,
 		Status:  f.Status,
 		Data:    f,
+		Block:   "failure",
 	})
 }
 

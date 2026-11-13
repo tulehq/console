@@ -146,6 +146,30 @@ func TestVerifierWithoutIdentity(t *testing.T) {
 	}
 }
 
+func TestVerifierAcceptsAPolicyDenial(t *testing.T) {
+	var seen []*http.Request
+	denied := service(t, 403, "application/xml", `<Error><Code>AccessDenied</Code>`+
+		`<Message>User: arn:aws:iam::000000000000:user/dev is not authorized to perform: `+
+		`s3:ListAllMyBuckets because no identity-based policy allows the `+
+		`s3:ListAllMyBuckets action</Message></Error>`, &seen)
+	v, _ := signin.NewVerifier(signin.Endpoints{ObjectStore: &denied})
+	p, err := v(t.Context(), key)
+	if err != nil {
+		t.Fatalf("verify: %v; a key denied by policy got past the signature", err)
+	}
+	if p.ARN != "arn:aws:iam::000000000000:user/dev" || p.KeyHint != "MPLE" {
+		t.Fatalf("principal %+v", p)
+	}
+
+	// A bare AccessDenied is how object-store answers some bad signatures.
+	bare := service(t, 403, "application/xml",
+		`<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>`, &seen)
+	v, _ = signin.NewVerifier(signin.Endpoints{ObjectStore: &bare})
+	if _, err = v(t.Context(), key); !errors.Is(err, signin.ErrRefused) {
+		t.Fatalf("err %v, want ErrRefused", err)
+	}
+}
+
 func TestVerifierAcceptsNoOrganization(t *testing.T) {
 	var seen []*http.Request
 	acc := service(t, 400, "application/x-amz-json-1.1",

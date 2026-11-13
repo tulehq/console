@@ -1,7 +1,10 @@
 // Package iam is the identity section: IAM users with their access keys
 // (status, created, last used), creating a user, creating a key (its
 // secret shown once, as AWS does), activating, deactivating and deleting
-// keys, and deleting users.
+// keys, and deleting users; each user's and role's inline policies (view,
+// put, delete) and attached managed policies (attach, detach); roles with
+// their trust policies (list, create, view, delete); and managed policies
+// (list, create, view the default version's document, delete).
 package iam
 
 import (
@@ -69,6 +72,84 @@ type API interface {
 		*iam.ListUserTagsInput,
 		...func(*iam.Options),
 	) (*iam.ListUserTagsOutput, error)
+	PolicyAPI
+	RoleAPI
+}
+
+// PolicyAPI is the part of API that reads and changes policies: users'
+// inline and attached policies, and managed policies.
+type PolicyAPI interface {
+	ListUserPolicies(
+		context.Context, *iam.ListUserPoliciesInput, ...func(*iam.Options),
+	) (*iam.ListUserPoliciesOutput, error)
+	GetUserPolicy(
+		context.Context, *iam.GetUserPolicyInput, ...func(*iam.Options),
+	) (*iam.GetUserPolicyOutput, error)
+	PutUserPolicy(
+		context.Context, *iam.PutUserPolicyInput, ...func(*iam.Options),
+	) (*iam.PutUserPolicyOutput, error)
+	DeleteUserPolicy(
+		context.Context, *iam.DeleteUserPolicyInput, ...func(*iam.Options),
+	) (*iam.DeleteUserPolicyOutput, error)
+	ListAttachedUserPolicies(
+		context.Context, *iam.ListAttachedUserPoliciesInput, ...func(*iam.Options),
+	) (*iam.ListAttachedUserPoliciesOutput, error)
+	AttachUserPolicy(
+		context.Context, *iam.AttachUserPolicyInput, ...func(*iam.Options),
+	) (*iam.AttachUserPolicyOutput, error)
+	DetachUserPolicy(
+		context.Context, *iam.DetachUserPolicyInput, ...func(*iam.Options),
+	) (*iam.DetachUserPolicyOutput, error)
+	ListPolicies(
+		context.Context, *iam.ListPoliciesInput, ...func(*iam.Options),
+	) (*iam.ListPoliciesOutput, error)
+	GetPolicy(
+		context.Context, *iam.GetPolicyInput, ...func(*iam.Options),
+	) (*iam.GetPolicyOutput, error)
+	GetPolicyVersion(
+		context.Context, *iam.GetPolicyVersionInput, ...func(*iam.Options),
+	) (*iam.GetPolicyVersionOutput, error)
+	CreatePolicy(
+		context.Context, *iam.CreatePolicyInput, ...func(*iam.Options),
+	) (*iam.CreatePolicyOutput, error)
+	DeletePolicy(
+		context.Context, *iam.DeletePolicyInput, ...func(*iam.Options),
+	) (*iam.DeletePolicyOutput, error)
+}
+
+// RoleAPI is the part of API for roles and their policies.
+type RoleAPI interface {
+	ListRoles(
+		context.Context, *iam.ListRolesInput, ...func(*iam.Options),
+	) (*iam.ListRolesOutput, error)
+	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(
+		context.Context, *iam.CreateRoleInput, ...func(*iam.Options),
+	) (*iam.CreateRoleOutput, error)
+	DeleteRole(
+		context.Context, *iam.DeleteRoleInput, ...func(*iam.Options),
+	) (*iam.DeleteRoleOutput, error)
+	ListRolePolicies(
+		context.Context, *iam.ListRolePoliciesInput, ...func(*iam.Options),
+	) (*iam.ListRolePoliciesOutput, error)
+	GetRolePolicy(
+		context.Context, *iam.GetRolePolicyInput, ...func(*iam.Options),
+	) (*iam.GetRolePolicyOutput, error)
+	PutRolePolicy(
+		context.Context, *iam.PutRolePolicyInput, ...func(*iam.Options),
+	) (*iam.PutRolePolicyOutput, error)
+	DeleteRolePolicy(
+		context.Context, *iam.DeleteRolePolicyInput, ...func(*iam.Options),
+	) (*iam.DeleteRolePolicyOutput, error)
+	ListAttachedRolePolicies(
+		context.Context, *iam.ListAttachedRolePoliciesInput, ...func(*iam.Options),
+	) (*iam.ListAttachedRolePoliciesOutput, error)
+	AttachRolePolicy(
+		context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options),
+	) (*iam.AttachRolePolicyOutput, error)
+	DetachRolePolicy(
+		context.Context, *iam.DetachRolePolicyInput, ...func(*iam.Options),
+	) (*iam.DetachRolePolicyOutput, error)
 }
 
 // NewClient returns the client for a session's credentials.
@@ -100,6 +181,23 @@ func (m *Module) Init(context.Context) error {
 		g.Post("/keys", m.createKey)
 		g.Post("/keys/status", m.keyStatus)
 		g.Post("/keys/delete", m.deleteKey)
+		for _, kind := range []string{userKind, roleKind} {
+			g.Get("/"+kind+"/policy", m.inline)
+			g.Post("/"+kind+"/policy", m.putInline)
+			g.Post("/"+kind+"/policy/delete", m.deleteInline)
+			g.Post("/"+kind+"/attach", m.attach)
+			g.Post("/"+kind+"/detach", m.detach)
+		}
+		g.Get("/roles", m.roles)
+		g.Get("/roles/new", m.newRole)
+		g.Post("/roles", m.createRole)
+		g.Get("/role", m.role)
+		g.Post("/roles/delete", m.deleteRole)
+		g.Get("/policies", m.policies)
+		g.Get("/policies/new", m.newPolicy)
+		g.Post("/policies", m.createPolicy)
+		g.Get("/policy", m.policy)
+		g.Post("/policies/delete", m.deletePolicy)
 	})
 	return nil
 }
@@ -226,7 +324,8 @@ type Tag struct {
 
 type userView struct {
 	User
-	Tags []Tag
+	Tags     []Tag
+	Policies Policies
 }
 
 func (m *Module) user(c gas.Context) error {
@@ -262,6 +361,7 @@ func (m *Module) user(c gas.Context) error {
 		}
 		tags.Marker = t.Marker
 	}
+	v.Policies = loadPolicies(c, api, ownerOf(userKind, v.Name))
 	return m.render.Render(c, web.Page{Name: "iam/user", Title: v.Name, Section: Key, Data: v})
 }
 

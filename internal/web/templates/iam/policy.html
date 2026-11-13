@@ -1,0 +1,23 @@
+{{define "content"}}
+{{$d := .Data}}
+<header class="page-head">
+  <div><nav class="crumbs" aria-label="Location"><a href="/iam/policies">Policies</a></nav><h1>{{$d.Name}}</h1></div>
+  {{- if not $d.AWS}}
+  <div class="actions">
+    <form method="post" action="/iam/policies/delete" class="inline" data-confirm="Delete policy {{$d.Name}}? Detach it and delete its other versions first.">{{template "csrf" .}}<input type="hidden" name="arn" value="{{$d.ARN}}"><button type="submit" class="danger">Delete policy</button></form>
+  </div>
+  {{- end}}
+</header>
+<dl class="facts">
+  <dt>ARN</dt><dd><code class="break">{{$d.ARN}}</code></dd>
+  <dt>Policy ID</dt><dd><code>{{$d.ID}}</code></dd>
+  <dt>Type</dt><dd>{{if $d.AWS}}AWS managed{{else}}Customer managed{{end}}</dd>
+  <dt>Path</dt><dd><code>{{$d.Path}}</code></dd>
+  {{with $d.Description}}<dt>Description</dt><dd>{{.}}</dd>{{end}}
+  <dt>Attachments</dt><dd>{{$d.Attachments}}</dd>
+  <dt>Created</dt><dd>{{when $d.Created}}</dd>
+  <dt>Updated</dt><dd>{{when $d.Updated}}</dd>
+</dl>
+<h2>Document <span class="hint">default version {{$d.DefaultVersion}}</span></h2>
+<pre class="body">{{$d.Document}}</pre>
+{{end}}

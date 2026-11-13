@@ -1,0 +1,18 @@
+{{define "content"}}
+{{template "iamtabs" "policies"}}
+<header class="page-head">
+  <h1>Policies</h1>
+  <div class="actions"><a class="button" href="/iam/policies/new">Create policy</a></div>
+</header>
+{{if .Data.Policies}}
+<table class="grid">
+  <thead><tr><th scope="col">Policy</th><th scope="col">Type</th><th scope="col" class="num">Attachments</th><th scope="col">Updated</th></tr></thead>
+  <tbody>
+  {{- range .Data.Policies}}
+  <tr><td><a href="{{.Link}}">{{.Name}}</a><br><code class="muted">{{.ARN}}</code></td><td>{{if .AWS}}AWS managed{{else}}Customer managed{{end}}</td><td class="num">{{.Attachments}}</td><td class="num">{{when .Updated}}</td></tr>
+  {{- end}}
+  </tbody>
+</table>
+{{template "pager" .Data}}
+{{else}}{{template "empty" "No managed policies."}}{{end}}
+{{end}}
