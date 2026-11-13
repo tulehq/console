@@ -111,7 +111,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.1.0
+    image: ghcr.io/tulehq/functions:0.1.1
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}

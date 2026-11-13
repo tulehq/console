@@ -29,8 +29,8 @@ jobs:
 
       # The end-to-end tests build and run every service the console shows
       # from its source, against each one's latest release, not its main
-      # branch; move a pin when that service releases. functions joins once
-      # it has a release.
+      # branch; move a pin when that service releases. functions runs its
+      # test images through the runner's Docker daemon.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tulehq/object-store
@@ -67,6 +67,12 @@ jobs:
           ref: v0.1.0
           path: queues
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tulehq/functions
+          ref: v0.1.1
+          path: functions
+
       - name: End-to-end tests
         run: make test-e2e
         env:
@@ -76,6 +82,7 @@ jobs:
           TULE_E2E_IDENTITY_DIR: ${{ github.workspace }}/identity
           TULE_E2E_MAILBOX_DIR: ${{ github.workspace }}/mailbox
           TULE_E2E_QUEUES_DIR: ${{ github.workspace }}/queues
+          TULE_E2E_FUNCTIONS_DIR: ${{ github.workspace }}/functions
 
   smoke:
     # The tests run the app in-process; this runs the image as users do.
