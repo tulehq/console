@@ -34,13 +34,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tulehq/object-store
-          ref: v0.8.0
+          ref: v0.9.0
           path: object-store
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tulehq/secret-store
-          ref: v0.5.0
+          ref: v0.6.0
           path: secret-store
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,13 +64,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tulehq/queues
-          ref: v0.4.0
+          ref: v0.5.0
           path: queues
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tulehq/functions
-          ref: v0.4.0
+          ref: v0.5.0
           path: functions
 
       - name: End-to-end tests
