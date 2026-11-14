@@ -83,7 +83,7 @@ services:
     volumes: [accountsdata:/data]
 
   object-store:
-    image: ghcr.io/tulehq/object-store:0.8.0
+    image: ghcr.io/tulehq/object-store:0.9.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9000:9000"]
