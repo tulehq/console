@@ -90,7 +90,7 @@ services:
     volumes: [objectdata:/data]
 
   secret-store:
-    image: ghcr.io/tulehq/secret-store:0.5.0
+    image: ghcr.io/tulehq/secret-store:0.6.0
     environment:
       <<: [*root-key, *identity-endpoint]
     ports: ["9010:9010"]
@@ -104,7 +104,7 @@ services:
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.4.0
+    image: ghcr.io/tulehq/queues:0.5.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -113,7 +113,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.4.0
+    image: ghcr.io/tulehq/functions:0.5.0
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}
