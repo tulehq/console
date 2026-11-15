@@ -22,7 +22,7 @@ With Docker, pointed at services on the host:
 docker run --rm -p 9070:9070 \
   -e TULE_Console_ObjectStoreEndpoint=http://host.docker.internal:9000 \
   -e TULE_Console_MailboxEndpoint=http://host.docker.internal:9040 \
-  ghcr.io/tulehq/console:0.3.9
+  ghcr.io/tulehq/console:0.3.10
 ```
 
 Then open <http://localhost:9070> and sign in. The image is based on Alpine
@@ -118,7 +118,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.6.1
+    image: ghcr.io/tulehq/functions:0.7.0
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}
@@ -136,7 +136,7 @@ services:
     group_add: ["${DOCKER_GID:-0}"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.9
+    image: ghcr.io/tulehq/console:0.3.10
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
