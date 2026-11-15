@@ -50,6 +50,8 @@ services:
     image: ghcr.io/tulehq/secret-store:0.6.0
     environment:
       <<: [*root-key, *identity-endpoint]
+      # Rotation invokes rotation functions there.
+      TULE_Store_FunctionsEndpoint: http://functions:9060
     ports: ["9010:9010"]
     volumes: [secretdata:/data]
 
