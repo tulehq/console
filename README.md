@@ -22,7 +22,7 @@ With Docker, pointed at services on the host:
 docker run --rm -p 9070:9070 \
   -e TULE_Console_ObjectStoreEndpoint=http://host.docker.internal:9000 \
   -e TULE_Console_MailboxEndpoint=http://host.docker.internal:9040 \
-  ghcr.io/tulehq/console:0.3.7
+  ghcr.io/tulehq/console:0.3.8
 ```
 
 Then open <http://localhost:9070> and sign in. The image is based on Alpine
@@ -68,7 +68,7 @@ x-identity: &identity-endpoint
 
 services:
   identity:
-    image: ghcr.io/tulehq/identity:0.5.0
+    image: ghcr.io/tulehq/identity:0.5.1
     environment:
       <<: *root-key
       TULE_Identity_AccountsEndpoint: http://accounts:9020
@@ -83,9 +83,12 @@ services:
     volumes: [accountsdata:/data]
 
   object-store:
-    image: ghcr.io/tulehq/object-store:0.12.0
+    image: ghcr.io/tulehq/object-store:0.13.0
     environment:
       <<: [*root-key, *identity-endpoint]
+      # Bucket notifications are delivered to queues and functions.
+      TULE_Storage_QueuesEndpoint: http://queues:9050
+      TULE_Storage_FunctionsEndpoint: http://functions:9060
     ports: ["9000:9000"]
     volumes: [objectdata:/data]
 
@@ -104,7 +107,7 @@ services:
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.5.0
+    image: ghcr.io/tulehq/queues:0.6.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -113,7 +116,7 @@ services:
     volumes: [queuesdata:/data]
 
   functions:
-    image: ghcr.io/tulehq/functions:0.5.0
+    image: ghcr.io/tulehq/functions:0.6.1
     profiles: [functions]
     depends_on:
       queues: {condition: service_healthy}
@@ -131,7 +134,7 @@ services:
     group_add: ["${DOCKER_GID:-0}"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.7
+    image: ghcr.io/tulehq/console:0.3.8
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
