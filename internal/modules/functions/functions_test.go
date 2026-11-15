@@ -227,9 +227,10 @@ func TestFunctionsAndDetails(t *testing.T) {
 func TestHistoryDownDoesNotBreakTheFunction(t *testing.T) {
 	f := newFake()
 	f.add("echo")
+	down := consoletest.UnreachableURL(t)
 	s := consoletest.Start(t, app.Overrides{Functions: func(c aws.Credentials) functions.Clients {
 		ep := awsclient.Endpoint{
-			URL:    "http://127.0.0.1:1",
+			URL:    down,
 			Region: "us-east-1",
 			HTTP:   http.DefaultClient,
 		}

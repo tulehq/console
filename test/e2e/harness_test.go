@@ -5,7 +5,6 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -349,7 +348,7 @@ func startConsole(work string) (*gas.App, string, error) {
 		return nil, "", fmt.Errorf("listen: %w", err)
 	}
 	go func() {
-		if serr := a.Server().Serve(l); serr != nil && !errors.Is(serr, http.ErrServerClosed) {
+		if serr := a.ServeListener(l); serr != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "e2e: console serve:", serr)
 		}
 	}()

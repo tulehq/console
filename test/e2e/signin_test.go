@@ -4,7 +4,6 @@ package e2e
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -223,12 +222,12 @@ func objectStoreConsole(t *testing.T) *consoletest.Browser {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	requireNoErr(t, err, "listen")
 	served := make(chan error, 1)
-	go func() { served <- a.Server().Serve(l) }()
+	go func() { served <- a.ServeListener(l) }()
 	t.Cleanup(func() {
 		if err := a.Stop(context.Background()); err != nil {
 			t.Errorf("stop the second console: %v", err)
 		}
-		if err := <-served; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := <-served; err != nil {
 			t.Errorf("serve the second console: %v", err)
 		}
 	})

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 
 	"tule.dev/console/internal/awsclient"
+	"tule.dev/console/internal/consoletest"
 	"tule.dev/console/internal/modules/signin"
 )
 
@@ -112,7 +113,7 @@ func TestVerifierServiceFault(t *testing.T) {
 	}
 
 	down := awsclient.Endpoint{
-		URL:    "http://127.0.0.1:1",
+		URL:    consoletest.UnreachableURL(t),
 		Region: "us-east-1",
 		HTTP:   http.DefaultClient,
 	}

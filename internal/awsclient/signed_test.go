@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 
 	"tule.dev/console/internal/awsclient"
+	"tule.dev/console/internal/consoletest"
 )
 
 // retrieval serves a retrieval API with one message, a/b, and refuses a
@@ -107,7 +108,7 @@ func TestReady(t *testing.T) {
 		!strings.Contains(r.Detail, "503") {
 		t.Fatalf("readiness %+v", r)
 	}
-	ep.URL = "http://127.0.0.1:1"
+	ep.URL = consoletest.UnreachableURL(t)
 	if r := awsclient.Ready(t.Context(), ep); r.State != "unreachable" {
 		t.Fatalf("readiness %+v", r)
 	}
