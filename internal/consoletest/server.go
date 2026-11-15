@@ -6,7 +6,6 @@ package consoletest
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -100,7 +99,7 @@ func Start(t *testing.T, o app.Overrides, env map[string]string, sections ...str
 		t.Fatalf("listen: %v", err)
 	}
 	s.URL = "http://" + l.Addr().String()
-	go func() { s.served <- a.Server().Serve(l) }()
+	go func() { s.served <- a.ServeListener(l) }()
 	t.Cleanup(func() { s.stop(t) })
 	return s
 }
@@ -138,7 +137,7 @@ func (s *Server) stop(t *testing.T) {
 	}
 	select {
 	case err := <-s.served:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err != nil {
 			t.Errorf("serve: %v", err)
 		}
 	case <-time.After(30 * time.Second):

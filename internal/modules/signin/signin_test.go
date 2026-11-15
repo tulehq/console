@@ -342,7 +342,7 @@ func TestOverviewListsSections(t *testing.T) {
 
 func TestUnreachableServiceIsShown(t *testing.T) {
 	s := consoletest.Start(t, app.Overrides{}, map[string]string{
-		"TULE_Console_QueuesEndpoint": "http://127.0.0.1:1",
+		"TULE_Console_QueuesEndpoint": consoletest.UnreachableURL(t),
 	}, "s3")
 	b := s.Browser(t)
 	b.SignIn(consoletest.KeyID, consoletest.Secret)
@@ -478,7 +478,7 @@ func TestSigningInAgainEndsTheOldSession(t *testing.T) {
 
 func TestUnreachableVerifierShowsNoDetail(t *testing.T) {
 	dead := awsclient.Endpoint{
-		URL:    "http://127.0.0.1:1",
+		URL:    consoletest.UnreachableURL(t),
 		Region: "us-east-1",
 		HTTP:   http.DefaultClient,
 	}
