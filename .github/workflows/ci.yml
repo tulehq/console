@@ -93,6 +93,18 @@ jobs:
       - name: Build and run the image
         run: make smoke
 
+      - name: compose.yaml names the project's network for functions
+        # Interpolation only: nothing is pulled or started. The network is
+        # the project's default one, whichever way the project is named.
+        shell: bash
+        run: |
+          network() {
+            docker compose "$@" --profile functions config --format json |
+              jq -r '.services.functions.environment.TULE_Functions_ContainerNetwork'
+          }
+          test "$(network -p tuleprobe)" = tuleprobe_default
+          test "$(network)" = "$(basename "$PWD")_default"
+
   publish:
     # Only tagged releases publish, and only after the tests and the image
     # smoke test pass.

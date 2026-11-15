@@ -22,7 +22,7 @@ With Docker, pointed at services on the host:
 docker run --rm -p 9070:9070 \
   -e TULE_Console_ObjectStoreEndpoint=http://host.docker.internal:9000 \
   -e TULE_Console_MailboxEndpoint=http://host.docker.internal:9040 \
-  ghcr.io/tulehq/console:0.3.10
+  ghcr.io/tulehq/console:0.3.11
 ```
 
 Then open <http://localhost:9070> and sign in. The image is based on Alpine
@@ -125,9 +125,13 @@ services:
     environment:
       <<: [*root-key, *identity-endpoint]
       TULE_Functions_QueuesEndpoint: http://queues:9050
-    # The function containers reach the Runtime API as
-    # host.docker.internal:9061, so it is published on the same port.
-    ports: ["9060:9060", "9061:9061"]
+      # Function containers join this project's default network, so they
+      # reach the Runtime API and the other services by service name, and
+      # the Runtime API port stays off the host.
+      TULE_Functions_ContainerNetwork: ${COMPOSE_PROJECT_NAME}_default
+      TULE_Functions_RuntimeAPIHost: functions
+      TULE_Functions_RuntimeAPIBind: 0.0.0.0
+    ports: ["9060:9060"]
     volumes:
       - functionsdata:/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -136,7 +140,7 @@ services:
     group_add: ["${DOCKER_GID:-0}"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.10
+    image: ghcr.io/tulehq/console:0.3.11
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
