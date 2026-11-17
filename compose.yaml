@@ -92,9 +92,13 @@ services:
     # The group that owns the socket on the Docker host, from DOCKER_GID as
     # above. Unset, it is 0, the root group.
     group_add: ["${DOCKER_GID:-0}"]
+    # On an SELinux host (Fedora, RHEL) the socket's label keeps containers
+    # from opening it; this turns labeling off for functions alone. Hosts
+    # without SELinux ignore it.
+    security_opt: ["label=disable"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.11
+    image: ghcr.io/tulehq/console:0.3.12
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
