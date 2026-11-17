@@ -22,7 +22,7 @@ With Docker, pointed at services on the host:
 docker run --rm -p 9070:9070 \
   -e TULE_Console_ObjectStoreEndpoint=http://host.docker.internal:9000 \
   -e TULE_Console_MailboxEndpoint=http://host.docker.internal:9040 \
-  ghcr.io/tulehq/console:0.3.12
+  ghcr.io/tulehq/console:0.3.13
 ```
 
 Then open <http://localhost:9070> and sign in. The image is based on Alpine
@@ -109,7 +109,7 @@ services:
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.6.1
+    image: ghcr.io/tulehq/queues:0.7.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -144,7 +144,7 @@ services:
     security_opt: ["label=disable"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.12
+    image: ghcr.io/tulehq/console:0.3.13
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
