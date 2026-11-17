@@ -63,7 +63,7 @@ services:
     volumes: [maildata:/data]
 
   queues:
-    image: ghcr.io/tulehq/queues:0.6.1
+    image: ghcr.io/tulehq/queues:0.7.0
     environment:
       <<: [*root-key, *identity-endpoint]
       # Queue URLs name the host clients on this machine reach queues at.
@@ -98,7 +98,7 @@ services:
     security_opt: ["label=disable"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.12
+    image: ghcr.io/tulehq/console:0.3.13
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
