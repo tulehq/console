@@ -22,7 +22,7 @@ With Docker, pointed at services on the host:
 docker run --rm -p 9070:9070 \
   -e TULE_Console_ObjectStoreEndpoint=http://host.docker.internal:9000 \
   -e TULE_Console_MailboxEndpoint=http://host.docker.internal:9040 \
-  ghcr.io/tulehq/console:0.3.11
+  ghcr.io/tulehq/console:0.3.12
 ```
 
 Then open <http://localhost:9070> and sign in. The image is based on Alpine
@@ -138,9 +138,13 @@ services:
     # The group that owns the socket on the Docker host, from DOCKER_GID as
     # above. Unset, it is 0, the root group.
     group_add: ["${DOCKER_GID:-0}"]
+    # On an SELinux host (Fedora, RHEL) the socket's label keeps containers
+    # from opening it; this turns labeling off for functions alone. Hosts
+    # without SELinux ignore it.
+    security_opt: ["label=disable"]
 
   console:
-    image: ghcr.io/tulehq/console:0.3.11
+    image: ghcr.io/tulehq/console:0.3.12
     depends_on:
       identity: {condition: service_healthy}
       accounts: {condition: service_healthy}
